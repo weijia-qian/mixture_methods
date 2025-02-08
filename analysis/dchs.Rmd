@@ -1,0 +1,393 @@
+---
+title: "EPI 731 Assignment 4"
+author: "Weijia Qian"
+date: "2024-10-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(bkmr)
+library(broom)
+library(bws)
+library(corrplot)
+library(gridExtra)
+library(gtsummary)
+library(gWQS)
+library(kableExtra)
+library(mgcv)
+library(knitr)
+library(patchwork)
+library(qgcomp)
+library(reshape2)
+library(splines)
+library(tidyverse)
+
+
+# load data
+data <- readRDS('data.RDS')
+data$maternal_hiv <- as.factor(data$maternal_hiv)
+data$ethnicity <- as.factor(data$ethnicity)
+```
+
+
+### Function to simulate data
+```{r}
+simulate_data <- function(
+  N = 500,             # sample size
+  b0 = 0,                # model intercept
+  coef_X = c(0, 0, 0, 0, 0),     # beta coefficients for X in the outcome model
+  coef_C = 0,  # beta coeffcient for the unmeasured confounder (C)
+  rho_X = 0,   # correlation between X1 and X2
+  rho_C = 0.75 # correlation between X1 and C
+  ){
+
+  p = length(coef_X)
+  
+  X = matrix(nrow = N, ncol = p) 
+  for (k in 1:p) {
+        X[, k] <- rnorm(n = N, mean = 0, sd = 1)
+  }
+  if (rho_X != 0){
+      X[, 2] <- (rho_X * X[, 1]) + sqrt(1 - rho_X * rho_X) * rnorm(n = N, mean = 0, sd = 1)
+  }
+  colnames(X) = paste0("x", 1:p)
+  
+  C <- (rho_C * X[, 1]) + sqrt(1 - rho_C * rho_C) * rnorm(n = N, mean = 0, sd = 1)
+  
+  y <- b0 + X %*% coef_X + C * coef_C + rnorm(N)
+  
+  sim_data = data.frame(y = y,
+                        X)
+}
+```
+
+### Simulate datasets
+```{r}
+# N = 1000
+# scenario 1
+dat1 = simulate_data(N = 1000, b0 = 0, coef_X = c(0, 0, 0, 0, 0), coef_C = 0, rho_X = 0)
+# scenario 2
+dat2 = simulate_data(N = 1000, b0 = 0, coef_X = c(1, 0, 0, 0, 0), coef_C = 0, rho_X = 0)
+# scenario 3
+dat3 = simulate_data(N = 1000, b0 = 0, coef_X = c(0.2, 0.2, 0.2, 0.2, 0.2), coef_C = 0, rho_X = 0)
+# scenario 4
+dat4 = simulate_data(N = 1000, b0 = 0, coef_X = c(1, 0.2, 0, 0, 0), coef_C = 0, rho_X = 0.25)
+# scenario 5
+dat5 = simulate_data(N = 1000, b0 = 0, coef_X = c(1, -0.2, 0, 0, 0), coef_C = 0, rho_X = 0.25)
+# scenario 6
+dat6 = simulate_data(N = 1000, b0 = 0, coef_X = c(1, 0, 0, 0, 0), coef_C = 0.5, rho_C = 0.25)
+```
+
+### WQS
+```{r}
+fit.wqs <- gwqs(y ~ pwqs + nwqs, mix_name = colnames(dat1[, -1]), data = dat1, 
+                q = 10, validation = 0.6, b1_pos = TRUE, b = 100, rh = 100,
+                family = "gaussian", seed = 42)
+#summary(fit.wqs)
+fit.wqs$final_weights
+# bar plot
+gwqs_barplot(fit.wqs, title = )
+# boxplot of the weights estimated at each repeated holdout step
+gwqs_scatterplot(fit.wqs)
+```
+
+### qgcomp
+```{r}
+fit.qc <- qgcomp.glm.noboot(y ~ ., dat = dat1, family = gaussian(), q = 10)
+fit.qc
+plot(fit.qc)
+#summary(fit.qc$fit)$coefficients[,4]
+```
+
+### BKMR
+```{r}
+fit.bkmr <- kmbayes(y = dat1$y, Z = dat1[, -1], family = "gaussian", iter = 2000, varsel = TRUE)
+# investigate model convergence
+#TracePlot(fit = fit.bkmr, par = "r", comp = 1)
+# estimated posterior inclusion probabilities
+ExtractPIPs(fit.bkmr)
+# plot the predictor-response function
+pred.resp.univar <- PredictorResponseUnivar(fit = fit.bkmr)
+ggplot(pred.resp.univar, aes(z, est, ymin = est - 1.96*se, ymax = est + 1.96*se)) + 
+     geom_smooth(stat = "identity") + 
+     facet_wrap(~ variable) +
+   ylab("h(z)")
+# summary statistics of the predictor-response function
+risks.overall <- OverallRiskSummaries(fit = fit.bkmr, y = dat1$y, Z = dat1[, -1], 
+                                       qs = seq(0.25, 0.75, by = 0.05), 
+                                       #qs = 0.6,
+                                       q.fixed = 0.5, method = "approx")
+risks.overall
+# #bkmr.plot1 <- ggplot(risks.overall, aes(quantile, est, ymin = est - 1.96*sd, ymax = est + 1.96*sd)) + 
+# #    geom_pointrange() + 
+# #  ggtitle("Scenario 1")
+# risks.singvar <- SingVarRiskSummaries(fit = fit.bkmr, y = dat1$y, Z = dat1[, -1],
+#                                       qs.diff = c(0.25, 0.75), 
+#                                       q.fixed = c(0.25, 0.50, 0.75),
+#                                       method = "approx")
+# risks.singvar
+# ggplot(risks.singvar, aes(variable, est, ymin = est - 1.96*sd, 
+#                           ymax = est + 1.96*sd, col = q.fixed)) + 
+#     geom_pointrange(position = position_dodge(width = 0.75)) + 
+#   coord_flip()
+# 
+# #grid.arrange(bkmr.plot1, bkmr.plot2, bkmr.plot3, bkmr.plot4, bkmr.plot5, bkmr.plot6,  ncol = 3)
+```
+
+### BWS
+```{r}
+fit.bws <- bws(iter = 2000, y = dat1$y, X = dat1[, -1], family = "gaussian")
+#plot(fit.bws)
+rstan::traceplot(fit.bws, pars = c("w", "theta1"), inc_warmup = TRUE, nrow = 2)
+print(fit.bws, pars = c("w", "theta1"))
+```
+
+### Plot individual weights
+```{r}
+library(readxl)
+
+# Reading sheet 2 of the Excel file
+weights <- read_excel('/Users/weijia/Library/Mobile Documents/com~apple~CloudDocs/EMORY/EPI 731/2. Simulation Studies/Simulation_study_results.xlsx', sheet = 2)
+
+weights_long <- weights %>%
+  pivot_longer(cols = starts_with("X"),  
+               names_to = "Exposure",   
+               values_to = "Weight") 
+
+# Step 2: Create the plot
+ggplot(weights_long, aes(x = Method, y = Weight, fill = Exposure)) +
+  geom_bar(stat = "identity", position = "stack") +  
+  facet_wrap(~ Scenario) +                           
+  labs(title = "Individual Weights by Scenario and Method",
+       x = "Method", y = "Weight") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### Real data application
+```{r}
+ind.expo <- c("PM10", "CO", "Benzene", "Toluene", "NO2", "SO2")
+joint.expo <- c("PM10_z", "CO_z", "Benzene_z", "Toluene_z", "NO2_z", "SO2_z")
+covars <- c("maternal_age_enr", "maternal_hiv", "ethnicity", "SES_inv")
+
+# correlation plot
+data_corr <- data[, c(ind.expo, "maternal_age_enr", "SES_inv")]
+M <- cor(data_corr)
+corrplot(cor(data_corr), type="upper")
+```
+
+```{r}
+# Make table 1
+table_one <- data %>%
+  select(c("lnCBCL_ext", ind.expo, covars)) %>%
+  tbl_summary(label = list(
+                lnCBCL_ext ~ "log CBCL Externalizing Score",
+                PM10 ~ "log PM10",
+                CO ~ "log CO",
+                Benzene ~ "log Benzene",
+                Toluene ~ "log Toluene",
+                NO2 ~ "log NO2",
+                SO2 ~ "log SO2",
+                maternal_age_enr ~ "Maternal Age",
+                maternal_hiv ~ "Maternal HIV Status",
+                ethnicity ~ "Ethnicity",
+                SES_inv ~ "Socioeconomic Status"
+              ),
+              statistic = list(
+                all_categorical() ~ "{n} ({p}%)",
+                all_continuous() ~ "{median} ({p25}, {p75})"
+              ),
+              digits = list(
+                all_categorical() ~ c(0, 1),
+                all_continuous() ~ c(1, 1)
+              ))
+table_one
+```
+
+### Individual effects using linear regression models
+```{r}
+# ind.res <- list()
+# for (expo in ind.expo) {
+#   formula <- as.formula(paste("lnCBCL_ext ~", expo, "+ maternal_age_enr + maternal_hiv + ethnicity + SES_inv"))
+#   fit <- lm(formula, data = data)
+#   res <- tidy(fit, conf.int = TRUE) %>%
+#     filter(term == expo)
+#   ind.res[[expo]] <- res
+# }
+# ind.res <- do.call(rbind, ind.res)
+# 
+# # Plot the beta estimates with 95% CI
+# ggplot(ind.res, aes(x = estimate, y = term)) +
+#   geom_point() +  # Point for beta estimate
+#   geom_errorbarh(aes(xmin = conf.low, xmax = conf.high), height = 0.2) +  # Horizontal error bars for CI
+#   geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+#   labs(
+#     title = "Prenatal exposure with CBCL externalizing problems",
+#     x = "Beta Estimate with 95% CI",
+#     y = "Exposure"
+#   ) +
+#   theme_minimal()
+
+ind.mod <- list()
+ind.res <- list()
+for (expo in ind.expo) {
+  formula <- as.formula(paste("lnCBCL_ext ~ s(", expo, ") + maternal_age_enr + maternal_hiv + ethnicity + SES_inv"))
+  mod <- gam(formula, data = data)
+  res <- tidy(mod, conf.int = TRUE) 
+  ind.mod[[expo]] <- mod
+  ind.res[[expo]] <- res
+}
+ind.res <- do.call(rbind, ind.res)
+
+# Create a function to generate ggplot-like plots
+plot_smooth <- function(model, model_name) {
+  plot <- plot(model, pages = 0, rug = FALSE, seWithMean = TRUE)
+  smooth_term <- plot[[1]]
+  
+  # Convert smooth term data into a ggplot-friendly format
+  plot_data <- data.frame(
+    x = smooth_term$x,
+    y = smooth_term$fit,
+    ymin = smooth_term$fit - 2 * smooth_term$se,
+    ymax = smooth_term$fit + 2 * smooth_term$se
+  )
+  
+  ggplot(plot_data, aes(x = x, y = y)) +
+    geom_line(color = "blue") +
+    geom_ribbon(aes(ymin = ymin, ymax = ymax), fill = "blue", alpha = 0.2) +
+    labs(
+      title = model_name,
+      x = "X",
+      y = "s(X)"
+    ) +
+    theme_minimal()
+}
+
+# Generate plots for all models
+plots <- lapply(seq_along(ind.mod), function(i) {
+  plot_smooth(ind.mod[[i]], ind.expo[i])
+})
+
+# Combine plots into a multi-panel layout
+combined_plot <- wrap_plots(plots, ncol = 3) 
+combined_plot
+```
+
+
+### WQS
+```{r}
+fit.wqs <- gwqs(lnCBCL_ext ~ pwqs + nwqs + maternal_age_enr + maternal_hiv + ethnicity + SES_inv, 
+                mix_name = joint.expo, data = data, q = 10, validation = 0.6, b1_pos = TRUE, b = 100, rh = 100,
+                family = "gaussian", seed = 916)
+gwqs_summary_tab(fit.wqs)
+gwqs_weights_tab(fit.wqs)
+# bar plot
+gwqs_barplot(fit.wqs)
+# scatter plot y vs wqs
+gwqs_scatterplot(fit.wqs)
+# scatter plot residuals vs fitted values
+gwqs_fitted_vs_resid(fit.wqs)
+# boxplot of the weights estimated at each repeated holdout step
+gwqs_boxplot(fit.wqs)
+```
+
+### qgcomp
+```{r}
+fit.qgcomp <- qgcomp.noboot(lnCBCL_ext ~ PM10_z + CO_z + Benzene_z + Toluene_z + NO2_z + SO2_z 
+                            + maternal_age_enr + maternal_hiv + ethnicity + SES_inv, 
+                            expnms = joint.expo, data = data, family = gaussian(), q = 10, bayes = TRUE)
+fit.qgcomp.boot <- qgcomp.boot(lnCBCL_ext ~ PM10_z + CO_z + Benzene_z + Toluene_z + NO2_z + SO2_z 
+                            + maternal_age_enr + maternal_hiv + ethnicity + SES_inv, 
+                            expnms = joint.expo, data = data, family = gaussian(), q = 10, bayes = TRUE,
+                            B = 200, seed = 125)
+fit.qgcomp
+plot(fit.qgcomp)
+fit.qgcomp.boot
+plot(fit.qgcomp.boot)
+
+fit.qgcomp.boot2 <- qgcomp.glm.boot(lnCBCL_ext ~ PM10_z + CO_z + bs(Benzene_z) + bs(Toluene_z) + bs(NO2_z) + SO2_z 
+                            + maternal_age_enr + maternal_hiv + ethnicity + SES_inv, 
+                            expnms = joint.expo, data = data, family = gaussian(), q = 10, bayes = TRUE, degree = 3,
+                            B = 200, seed = 125)
+fit.qgcomp.boot2
+plot(fit.qgcomp.boot2)
+
+AIC(fit.qgcomp.boot$fit)
+AIC(fit.qgcomp.boot2$fit)
+BIC(fit.qgcomp.boot$fit)
+BIC(fit.qgcomp.boot2$fit)
+```
+
+### BKMR
+```{r}
+fit.bkmr <- kmbayes(y = data$lnCBCL_ext, Z = data[, joint.expo], X = data[, c("maternal_age_enr", "SES_inv")], family = "gaussian", iter = 2000, varsel = TRUE)
+# investigate model convergence
+TracePlot(fit = fit.bkmr, par = "r", comp = 1)
+# estimated posterior inclusion probabilities
+ExtractPIPs(fit.bkmr)
+# plot the predictor-response function
+pred.resp.univar <- PredictorResponseUnivar(fit = fit.bkmr)
+ggplot(pred.resp.univar, aes(z, est, ymin = est - 1.96 * se, ymax = est + 1.96 * se)) +
+  geom_smooth(stat = "identity") + 
+  facet_wrap(~ variable) +
+  ylab("h(z)")
+
+risks.overall <- OverallRiskSummaries(fit = fit.bkmr, 
+                                      qs = seq(0.25, 0.75, by = 0.05), 
+                                       #qs = 0.6,
+                                       q.fixed = 0.5, method = "approx")
+risks.overall
+ggplot(risks.overall, aes(quantile, est, ymin = est - 1.96*sd, ymax = est + 1.96*sd)) +
+  geom_pointrange() + 
+  xlab("joint exposure quantile") +
+  ylab("est")
+
+risks.singvar <- SingVarRiskSummaries(fit = fit.bkmr,
+                                      qs.diff = c(0.25, 0.75),
+                                      q.fixed = c(0.25, 0.50, 0.75),
+                                      method = "approx")
+risks.singvar
+ggplot(risks.singvar, aes(variable, est, ymin = est - 1.96*sd, ymax = est + 1.96*sd, col = q.fixed)) +
+  geom_pointrange(position = position_dodge(width = 0.75)) +
+  coord_flip()
+```
+
+### BWS
+```{r}
+fit.bws <- bws(iter = 2000, y = data$lnCBCL_ext, X = data[, joint.expo], Z = data[, covars], family = "gaussian", 
+               show_messages = FALSE)
+fit.bws
+rstan::plot(fit.bws, pars = c("w", "theta1"), ylab = joint.expo)
+print(fit.bws, pars = c("w", "theta1"))
+
+data$SO2_z_neg <- -data$SO2_z
+fit.bws2 <- bws(iter = 2000, y = data$lnCBCL_ext, X = data[, c("PM10_z", "CO_z", "Benzene_z", "Toluene_z", "NO2_z", "SO2_z_neg")], 
+                Z = data[, covars], family = "gaussian", show_messages = FALSE)
+fit.bws2
+rstan::plot(fit.bws2, pars = c("w", "theta1"), ylab = joint.expo)
+print(fit.bws2, pars = c("w", "theta1"))
+```
+
+### # Plot individual weights
+```{r}
+save(fit.wqs, fit.qgcomp, fit.qgcomp.boot, fit.qgcomp.boot2, fit.bkmr, fit.bws, file = "models.RData")
+library(readxl)
+
+# Reading sheet 2 of the Excel file
+weights <- read_excel('weights.xlsx', sheet = 2)
+
+weights_long <- weights %>%
+  pivot_longer(cols = joint.expo,  
+               names_to = "Exposure",   
+               values_to = "Weight") 
+
+# Step 2: Create the plot
+ggplot(weights_long, aes(x = Method, y = Weight, fill = Exposure)) +
+  geom_bar(stat = "identity", position = "stack") +                       
+  labs(title = "Individual Weights by Method",
+       x = "Method", y = "Weight") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+

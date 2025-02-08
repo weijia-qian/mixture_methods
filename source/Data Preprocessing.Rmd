@@ -1,0 +1,79 @@
+---
+title: "EPI 731 Analysis"
+author: "Weijia Qian"
+date: "2024-09-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(qgcomp)
+library(readxl)
+library(tidyverse)
+
+dchs_MI_aim2 <- readRDS(file = "/Users/weijia/Library/Mobile Documents/com~apple~CloudDocs/EMORY/EPI 731/dchs_MI_aim2_10192022.rds")
+cbcl <- read_excel("/Users/weijia/Library/Mobile Documents/com~apple~CloudDocs/EMORY/EPI 731/DCHS_CBCL_6.5yrs_data_03AUG2022.xlsx")
+
+dchs <- dchs_MI_aim2 %>%
+  inner_join(cbcl)
+
+# data manipulation rename exposures, log transform exposures
+dchs2 <- dchs %>%
+  mutate(PM10 = log(PM10Concgm31_Prenatal_MI5+1),
+         CO = log(Max_CO_Prenatal_MI5+1),
+         Benzene = log(AmbientConcBenzenegm3_Prenatal_MI5+1),
+         Toluene = log(AmbientConcToluenegm3_Prenatal_MI5+1),
+         NO2 = log(AmbientConcNO2gm3_Ant_Prenatal_MI5+1),
+         SO2 = log(AmbientConcSO2gm3_Ant_Prenatal_MI5+1),
+         Cotinine = log(maxCOT_anc_Prenatal_MI5+1),
+         EPDS = log(EPDS_total_ANC_Prenatal_MI5+1),
+         #SES_inv = (log(ses_assetsum_ANC_Prenatal_MI5+1))*-1) %>% #reverse code SES
+         SES_inv = (ses_assetsum_ANC_Prenatal_MI5*-1)) %>% #reverse code SES
+  rename(Food_insecurity = (ln_food_insecurity_anc_Prenatal_MI5),
+         SRQ = (ln_srq_total_anc_Prenatal_MI5),
+         IPV_emo = (ln_ipvemotional_anc_Prenatal_MI5),
+         IPV_phys = (ln_ipvphysical_anc_Prenatal_MI5),
+         LEQ = (ln_leq_anc_Prenatal_MI5),
+         ASSIST_tobacco = (ln_assist_tobacco_anc_Prenatal_MI5),
+         ASSIST_alcohol = (ln_assist_alcohol_anc_Prenatal_MI5))
+
+# center/scale exposures
+dchs3 <- dchs2 %>%
+  mutate(PM10_z = scale(PM10)[,1],
+         CO_z = scale(CO)[,1],
+         Benzene_z = scale(Benzene)[,1],
+         Toluene_z = scale(Toluene)[,1],
+         NO2_z = scale(NO2)[,1],
+         SO2_z = scale(SO2)[,1],
+         Cotinine_z = scale(Cotinine)[,1],
+         SES_inv_z = scale(SES_inv)[,1],
+         Food_insecurity_z = scale(Food_insecurity)[,1],
+         EPDS_z = scale(EPDS)[,1],
+         SRQ_z = scale(SRQ)[,1],
+         LEQ_z = scale(LEQ)[,1],
+         IPV_emo_z = scale(IPV_emo)[,1],
+         IPV_phys_z = scale(IPV_phys)[,1],
+         ASSIST_tobacco_z = scale(ASSIST_tobacco)[,1],
+         ASSIST_alcohol_z = scale(ASSIST_alcohol)[,1],
+         lnCBCL_total = log(Total_problems_subsc +1),
+         lnCBCL_ext = log(Externalising_subsc +1),
+         lnCBCL_int = log(Internalising_subsc +1)
+         )
+
+exposures <- c("PM10", "CO", "Benzene", "Toluene", "NO2", "SO2", "Cotinine", "SES_inv", 
+               "Food_insecurity", "EPDS", "SRQ", "LEQ", "IPV_emo", "IPV_phys", "ASSIST_tobacco", "ASSIST_alcohol",
+               "PM10_z", "CO_z", "Benzene_z", "Toluene_z", "NO2_z", "SO2_z", "Cotinine_z", "SES_inv_z", 
+               "Food_insecurity_z", "EPDS_z", "SRQ_z", "LEQ_z", "IPV_emo_z", "IPV_phys_z", "ASSIST_tobacco_z", "ASSIST_alcohol_z",
+               "maternal_age_enr", "maternal_hiv", "ethnicity")
+outcomes <- c("lnCBCL_ext")
+data <- dchs3 %>%
+  select(all_of(outcomes), all_of(exposures))
+
+saveRDS(data, file = "data.RDS")
+```
+
+```{r}
+summary(dchs3$Externalising_subsc)
+hist(data$SES_inv)
+```
+

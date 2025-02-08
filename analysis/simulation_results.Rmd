@@ -1,0 +1,259 @@
+---
+title: "Simulation Results"
+author: "Weijia Qian"
+date: "2024-10-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(bkmr)
+library(broom)
+library(bws)
+library(corrplot)
+library(gridExtra)
+library(gtsummary)
+library(gWQS)
+library(kableExtra)
+library(mgcv)
+library(knitr)
+library(patchwork)
+library(qgcomp)
+library(reshape2)
+library(rstan)
+library(splines)
+library(tidyverse)
+
+# load simulated data
+load(here("results", "simdata.RData"))
+dat_names <- ls(pattern = "^dat")
+dat_list <- mget(dat_names)
+```
+
+
+```{r}
+df_coef <- data.frame()
+df_weights <- data.frame()
+df_bkmr_overall <- data.frame()
+
+for (scenario in dat_list) {
+  for (iteration in scenario){
+    
+    ### WQS ###
+    fit.wqs <- gwqs(y ~ wqs, mix_name = paste0("X", 1:5), data = iteration, 
+                q = NULL, validation = 0.6, b1_pos = TRUE, b = 10, rh = 10,
+                family = "gaussian")
+
+    # extract estimated mixture effect
+    coef <- coef(fit.wqs)[2]
+    coef_lb <- confint(fit.wqs)[2, 1]
+    coef_ub <- confint(fit.wqs)[2, 2]
+
+    # extract estimated weights
+    weights <- fit.wqs$final_weights
+
+    # save results
+    tmp_coef <- data.frame(scenario = iteration$scenario[1],
+                      iter = iteration$iter[1],
+                      method = "WQS",
+                      estimate = coef,
+                      lb = coef_lb,
+                      ub = coef_ub)
+
+    tmp_weights <- data.frame(scenario = iteration$scenario[1],
+                      iter = iteration$iter[1],
+                      method = "WQS",
+                      mix_name = weights$mix_name,
+                      estimate = weights$Estimate,
+                      lb = weights$`2.5%`,
+                      ub = weights$`97.5%`)
+    
+    # append results
+    df_coef <- rbind(df_coef, tmp_coef)
+    df_weights <- rbind(df_weights, tmp_weights)
+    
+    
+    ### qgcomp.noboot ###
+    fit.qgcomp <- qgcomp.glm.noboot(y ~ X1 + X2 + X3 + X4 + X5, dat = iteration, family = gaussian(), q = NULL, bayes = TRUE)
+    
+    # extract estimated mixture effect
+    coef <- coef(fit.qgcomp)[2]
+    coef_lb <- confint(fit.qgcomp)[2, 1]
+    coef_ub <- confint(fit.qgcomp)[2, 2]
+
+    # extract estimated weights (normalized by effect size)
+    pos_weights_names <- names(fit.qgcomp$pos.weights)
+    pos_weights <- fit.qgcomp$pos.weights * fit.qgcomp$pos.psi / (fit.qgcomp$pos.size + fit.qgcomp$neg.size)
+    neg_weights_names <- names(fit.qgcomp$neg.weights)
+    neg_weights <- fit.qgcomp$neg.weights * fit.qgcomp$neg.psi / (fit.qgcomp$pos.size + fit.qgcomp$neg.size)
+
+    # save results
+    tmp_coef <- data.frame(scenario = iteration$scenario[1],
+                      iter = iteration$iter[1],
+                      method = "qgcomp.noboot",
+                      estimate = coef,
+                      lb = coef_lb,
+                      ub = coef_ub)
+
+    tmp_weights <- data.frame(scenario = iteration$scenario[1],
+                      iter = iteration$iter[1],
+                      method = "qgcomp.noboot",
+                      mix_name = c(pos_weights_names, neg_weights_names),
+                      estimate = c(pos_weights, neg_weights),
+                      lb = NA, ub = NA)
+
+    # append results
+    df_coef <- rbind(df_coef, tmp_coef)
+    df_weights <- rbind(df_weights, tmp_weights)
+    
+    
+    ### qgcomp.boot ###
+    fit.qgcomp.boot <- qgcomp.glm.boot(y ~ X1 + X2 + X3 + X4 + X5, dat = iteration, family = gaussian(), 
+                                       q = NULL, bayes = TRUE, B = 200)
+
+    # extract estimated mixture effect
+    coef <- coef(fit.qgcomp.boot)[2]
+    coef_lb <- confint(fit.qgcomp.boot)[2, 1]
+    coef_ub <- confint(fit.qgcomp.boot)[2, 2]
+
+    # save results
+    tmp_coef <- data.frame(scenario = iteration$scenario[1],
+                      iter = iteration$iter[1],
+                      method = "qgcomp.boot",
+                      estimate = coef,
+                      lb = coef_lb,
+                      ub = coef_ub)
+    
+    # append results
+    df_coef <- rbind(df_coef, tmp_coef)
+    
+    ### BKMR ###
+    fit.bkmr <- kmbayes(y = iteration$y, Z = iteration[, 4:8], family = "gaussian", iter = 2000, verbose = FALSE, varsel = TRUE)
+
+    # estimated posterior inclusion probabilities
+    weights <- ExtractPIPs(fit.bkmr)
+    tmp_weights <- data.frame(scenario = iteration$scenario[1],
+                      iter = iteration$iter[1],
+                      method = "BKMR",
+                      mix_name = weights$variable,
+                      estimate = weights$PIP,
+                      lb = NA, ub = NA)
+
+    # summary statistics of the predictor-response function
+    risks.overall <- OverallRiskSummaries(fit = fit.bkmr, y = iteration$y, Z = iteration[, 4:8], 
+                                       qs = seq(0, 1, by = 0.1), 
+                                       q.fixed = 0.5, method = "approx")
+    tmp_bkmr_overall <- data.frame(scenario = iteration$scenario[1],
+                      iter = iteration$iter[1],
+                      quantile = risks.overall$quantile,
+                      est = risks.overall$est,
+                      sd = risks.overall$sd)
+    
+    # append results
+    df_bkmr_overall <- rbind(df_bkmr_overall, tmp_bkmr_overall)
+    df_weights <- rbind(df_weights, tmp_weights)
+    
+    
+    ### BWS ###
+    fit.bws <- bws(iter = 2000, y = iteration$y, X = iteration[, 4:8], family = "gaussian")
+
+    # extract estimated mixture effect
+    df_bws <- as.data.frame(fit.bws, pars = c("theta1", "w"))
+    coef <- mean(df_bws$theta1)
+    coef_lb <- quantile(df_bws$theta1, 0.025)
+    coef_ub <- quantile(df_bws$theta1, 0.975)
+
+    # extract estimated weights
+    weights <- colMeans(df_bws)[-1]
+    weights_lb <- apply(df_bws, 2, quantile, probs = 0.025)[-1]
+    weights_ub <- apply(df_bws, 2, quantile, probs = 0.975)[-1]
+
+    # save results
+    tmp_coef <- data.frame(scenario = iteration$scenario[1],
+                      iter = iteration$iter[1],
+                      method = "BWS",
+                      estimate = coef,
+                      lb = coef_lb,
+                      ub = coef_ub)
+
+    tmp_weights <- data.frame(scenario = iteration$scenario[1],
+                          iter = iteration$iter[1],
+                          method = "BWS",
+                          mix_name = paste0("X",1:5),
+                          estimate = weights,
+                          lb = weights_lb,
+                          ub = weights_ub)
+    
+    # append results
+    df_coef <- rbind(df_coef, tmp_coef)
+    df_weights <- rbind(df_weights, tmp_weights)
+  }
+}
+
+```
+
+```{r}
+df_coef %>%
+  filter(scenario < 5) %>%
+  mutate(truth = ifelse(scenario == 1, 0, 1)) %>%
+  mutate(MSE = (estimate - truth)^2) %>%
+  group_by(scenario, method) %>%
+  summarise(mean_MSE = round(mean(MSE, na.rm = TRUE), 4))
+```
+
+```{r}
+# Define the true predictors for each scenario
+true_predictors <- list(
+  "1" = character(),        # No true predictor in scenario 1
+  "2" = c("X1"),             # Only X1 is a true predictor
+  "3" = c("X1", "X2", "X3", "X4", "X5"),  # All predictors are true
+  "4" = c("X1", "X2")        # Only X1 and X2 are true predictors
+)
+
+df_metrics <- df_weights %>%
+  mutate(
+    is_important = ifelse(method == "BKMR", estimate > 0.5, estimate > 0.2),  # Identify "important" predictors
+    scenario = as.character(scenario)  # Convert scenario to character for list lookup
+  ) %>%
+  group_by(scenario, method, iter) %>%
+  summarise(
+    # Compute Sensitivity: Proportion of true predictors correctly identified
+    sensitivity = sum(mix_name %in% true_predictors[[scenario]] & is_important) / 5,
+    
+    # Compute Specificity: Proportion of false predictors correctly identified as unimportant
+    specificity = sum(!(mix_name %in% true_predictors[[scenario]]) & !is_important) / 5,
+    
+    .groups = "drop"
+  ) 
+  group_by(scenario, method) %>%
+  summarise(
+    mean_sensitivity = mean(sensitivity, na.rm = TRUE),
+    mean_specificity = mean(specificity, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Print results
+print(df_metrics)
+```
+
+### Plot individual weights
+```{r}
+library(readxl)
+
+# Reading sheet 2 of the Excel file
+weights <- read_excel('/Users/weijia/Library/Mobile Documents/com~apple~CloudDocs/EMORY/EPI 731/2. Simulation Studies/Simulation_study_results.xlsx', sheet = 2)
+
+weights_long <- weights %>%
+  pivot_longer(cols = starts_with("X"),  
+               names_to = "Exposure",   
+               values_to = "Weight") 
+
+# Step 2: Create the plot
+ggplot(weights_long, aes(x = Method, y = Weight, fill = Exposure)) +
+  geom_bar(stat = "identity", position = "stack") +  
+  facet_wrap(~ Scenario) +                           
+  labs(title = "Individual Weights by Scenario and Method",
+       x = "Method", y = "Weight") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```

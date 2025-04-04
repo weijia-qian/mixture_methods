@@ -3,28 +3,22 @@
 ###############################################################
 simulate_data <- function(
     n = 500,                      # sample size
-    beta_0 = 0,                       # model intercept
+    beta_0 = 0,                   # model intercept
     beta_X = c(0, 0, 0, 0, 0),    # beta coefficients for X
-    beta_X1X1 = 0,              # beta coefficient for the X1X2 interaction
-    beta_X1X2 = 0,              # beta coefficient for the X1X2 interaction
+    beta_X1X1 = 0,                # beta coefficient for the X1X2 interaction
+    beta_X1X2 = 0,                # beta coefficient for the X1X2 interaction
     beta_C = 0,                   # beta coefficient for the unmeasured confounder (C)
-    rho_X1X2 = 0,                    # correlation between X1 and X2
-    rho_C = 0.75                 # correlation between X1 and C
+    rho_X = 0,                    # pairwise correlation between X's
+    rho_C = 0.7                # correlation between X1 and C
 ){
-  
-  p = length(beta_X) # number of predictors
+    p = length(beta_X) # number of predictors
 
     # Simulate X
-    X = matrix(nrow = n, ncol = p) 
-    for (k in 1:p) {
-      X[, k] <- rnorm(n)
-    }
-    colnames(X) = paste0("X", 1:p)
+    Sigma <- matrix(rho_X, nrow = p, ncol = p)
+    diag(Sigma) <- 1
     
-    # Introduce correlation between X1 and X2
-    if (rho_X1X2 != 0){
-      X[, 2] <- (rho_X1X2 * X[, 1]) + sqrt(1 - rho_X1X2 * rho_X1X2) * rnorm(n)
-    }
+    X <- mvrnorm(n, mu = rep(0, p), Sigma = Sigma)
+    colnames(X) = paste0("X", 1:p)
     
     # Simulate the unmeasured confounder C
     C <- (rho_C * X[, 1]) + sqrt(1 - rho_C * rho_C) * rnorm(n)

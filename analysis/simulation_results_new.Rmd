@@ -1,0 +1,225 @@
+---
+title: "Simulation Results"
+author: "Weijia Qian"
+date: "2024-10-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(CCMHr)
+library(tidyverse)
+library(knitr)
+
+# load simulation results
+folder_path <- "/Users/weijia/Research/Huels/results/20250328"
+rda_files <- list.files(path = folder_path, pattern = "\\.RDA$", full.names = TRUE)
+all_results <- list()
+for (i in 1:length(rda_files)) {
+  all_results[[i]] <- loadRDa(rda_files[[i]])
+}
+```
+
+### Type 1 Error and Power
+```{r}
+all_coef <- data.frame()
+for (scenario in all_results) {
+  for (iteration in scenario) {
+    all_coef <- rbind(all_coef, iteration$coef)
+  }
+}
+
+all_coef$param <- ifelse(grepl("^psi2", rownames(all_coef)), "psi2", "psi1")
+
+all_coef <- all_coef %>%
+#  filter(method != "qgcomp.boot") %>%
+  mutate(truth = case_when(scenario == 1 ~ 0,
+                           scenario == 5 & !grepl("WQS2", method) ~ 0,
+                           scenario == 5 & method == "WQS2: pos" ~ 0.5,
+                           scenario == 5 & method == "WQS2: neg" ~ -0.5,
+                           scenario != 5 & method == "WQS2: neg" ~ 0,
+                           scenario %in% c(2, 3, 4) ~ 1,
+                           scenario == 6 ~ 0.625,
+                           scenario == 7 & method != "qgcomp.boot" ~ 1.2,
+                           scenario == 7 & method == "qgcomp.boot" & param == "psi1" ~ 1,
+                           scenario == 7 & method == "qgcomp.boot" & param == "psi2" ~ 0.2,
+                           scenario == 8 & method != "qgcomp.boot" ~ 1.7,
+                           scenario == 8 & method == "qgcomp.boot" & param == "psi1" ~ 1.5,
+                           scenario == 8 & method == "qgcomp.boot" & param == "psi2" ~ 0.2),
+         bias = estimate - truth,
+         mse = (estimate - truth)^2,
+         cover = (truth >= lb) & (truth <= ub))
+  
+df_coef <- all_coef %>%
+  group_by(scenario, method, param) %>%
+  summarise(mean_est = round(mean(estimate, na.rm = TRUE), 3),
+            mean_bias = round(mean(bias, na.rm = TRUE), 3),
+            mean_mse = round(mean(mse, na.rm = TRUE), 3),
+            mean_cover = round(mean(cover, na.rm = TRUE), 3),
+            .groups = "drop") %>%
+  filter(param == "psi1")
+
+ggplot(df_coef, 
+       aes(x = method, y = mean_bias, fill = method)) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_wrap(~ scenario) +                           
+  labs(x = "Method", y = "Bias", title = "Mean bias by scenario and method") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+ggplot(df_coef, 
+       aes(x = method, y = mean_cover, fill = method)) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_wrap(~ scenario) +                           
+  labs(x = "Method", y = "Coverage", title = "Mean coverage of 95% CI by scenario and method") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+
+df_type1 <- all_coef %>%
+  filter(scenario %in% c(1,2,3)) %>%
+  mutate(cover = (0 >= lb) & (0 <= ub),
+         scenario = "Null") %>%
+  group_by(scenario, rho_X, method) %>%
+  summarise(type1_error = 1 - round(mean(cover, na.rm = TRUE), 4),
+            .groups = "drop") %>%
+  pivot_wider(names_from = method, values_from = type1_error)
+kable(df_type1, format = "markdown", caption = "Type 1 Error by Scenario and Method")
+
+ggplot(df_type1, 
+       aes(x = method, y = type1_error, fill = method)) +
+  geom_bar(stat = "identity", position = "stack") +  
+  facet_wrap(~ scenario) +                           
+  labs(x = "Method", y = "Type 1 error", title = "Mean type 1 error by scenario and method") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+df_power <- all_coef %>%
+  filter(!(scenario %in% c(1,2,3))) %>%
+  filter(param != "psi2") %>%
+  filter(!(method == "WQS2: neg")) %>%
+  mutate(power = !((0 >= lb) & (0 <= ub)),
+         scenario = case_when(scenario %in% c(4,5,6) ~ "Single effect",
+                              scenario %in% c(7,8,9) ~ "Multiple, homogeneous effect",
+                              scenario %in% c(10,11,12) ~ "Heterogeneous effect")) %>%
+  group_by(scenario, rho_X, method) %>%
+  summarise(power = round(mean(power, na.rm = TRUE), 4),
+            .groups = "drop") %>%
+  pivot_wider(names_from = method, values_from = power)
+
+df_power_psi2 <- all_coef %>%
+  filter(param == "psi2") %>%
+  mutate(power = !((0 >= lb) & (0 <= ub))) %>%
+  group_by(scenario, method) %>%
+  summarise(power = round(mean(power, na.rm = TRUE), 4),
+            .groups = "drop")
+```
+
+### Sensitivity and Specificity
+```{r}
+all_weights <- data.frame()
+for (scenario in all_results) {
+  for (iteration in scenario) {
+    all_weights <- rbind(all_weights, iteration$weights)
+  }
+}
+
+all_weights <- all_weights %>%
+  filter(!grepl("WQS2", method)) %>%
+  mutate(is_important = ifelse(method == "BKMR", estimate > 0.5, abs(estimate) > 0.2),
+         true_predictor = ifelse((mix_name == "X1" & scenario != 1)|
+                                 (mix_name == "X2" & scenario %in% c(3,4,5,8)) |
+                                 (mix_name %in% c("X3","X4") & scenario == 3), TRUE, FALSE),
+         # true_predictor = ifelse((mix_name == "X1" & scenario != 1 & method != "WQS2: neg") | 
+         #                         (mix_name == "X2" & scenario %in% c(3,4,8)) |
+         #                         (mix_name == "X2" & scenario == 5 & method != "WQS2: pos") |
+         #                         (mix_name %in% c("X3, X4") & scenario == 3), TRUE, FALSE),
+         true_weight = case_when(scenario == 1 ~ NA,
+                                 scenario %in% c(2,6,7) & mix_name == "X1" ~ 1,
+                                 scenario %in% c(2,6,7) & mix_name != "X1" ~ 0,
+                                 scenario == 3 & mix_name != "X5" ~ 0.25,
+                                 scenario == 3 & mix_name == "X5" ~ 0,
+                                 scenario %in% c(4,5) & mix_name %in% c("X1","X2") ~ 0.5,
+                                 scenario %in% c(4,5) & mix_name %in% c("X3","X4","X5") ~ 0,
+                                 scenario == 8 & mix_name == "X1" ~ 0.667,
+                                 scenario == 8 & mix_name == "X2" ~ 0.333,
+                                 scenario == 8 & mix_name %in% c("X3","X4","X5") ~ 0))
+
+# sensitivity and specificity
+df_sesp <- all_weights %>%
+  group_by(scenario, method, seed) %>%
+  summarise(se = sum(is_important & true_predictor) / sum(true_predictor),
+            sp = sum(!is_important & !true_predictor) / sum(!true_predictor),
+           .groups = "drop")  %>%
+  group_by(scenario, method) %>%
+  summarise(mean_se = round(mean(se, na.rm = TRUE), 4),
+            mean_sp = round(mean(sp, na.rm = TRUE), 4),
+            .groups = "drop")
+
+ggplot(df_sesp, 
+       aes(x = method, y = mean_se, fill = method)) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_wrap(~ scenario) +                           
+  labs(x = "Method", y = "Sensitivity", title = "Mean sensitivity by scenario and method") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+ggplot(df_sesp, 
+       aes(x = method, y = mean_sp, fill = method)) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_wrap(~ scenario) +                           
+  labs(x = "Method", y = "Specificity", title = "Mean specificity by scenario and method") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+
+# plot weights
+df_weights <- all_weights %>%
+  group_by(scenario, method, mix_name) %>%
+  summarise(mean_weight = round(mean(abs(estimate), na.rm = TRUE), 4),
+            .groups = "drop") %>%
+  group_by(scenario, method) %>%
+  mutate(mean_weight = ifelse(method == "BKMR", mean_weight / sum(mean_weight), mean_weight)) %>%
+  ungroup()
+
+df_true_weights <- all_weights %>%
+  group_by(scenario, mix_name) %>%
+  summarise(mean_weight = mean(true_weight, na.rm = TRUE),
+            .groups = "drop") %>%
+  mutate(method = "truth")
+
+df_weights <- rbind(df_weights, df_true_weights)
+df_weights$method <- factor(df_weights$method, levels = c("truth", "BKMR", "BWS", "qgcomp.noboot", "WQS"))
+
+ggplot(df_weights, 
+       aes(x = method, y = mean_weight, fill = mix_name, alpha = factor(ifelse(scenario %in% c(1, 5), "light", "dark")))) +
+  geom_bar(stat = "identity", position = "stack") +  
+  facet_wrap(~ scenario) +                           
+  labs(x = "Method", y = "Weight", fill = "Exposure", title = "Mean weights by scenario and method") +
+  scale_alpha_manual(values = c("light" = 0.5, "dark" = 1)) + 
+  guides(alpha = "none") + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+library(scales)
+all_bkmr <- data.frame()
+for (scenario in all_results) {
+    all_bkmr <- rbind(all_bkmr, scenario[[1]]$bkmr)
+}
+for (scenario in all_results) {
+p <- ggplot(scenario[[1]]$bkmr, aes(quantile, est, ymin = est - 1.96*sd, ymax = est + 1.96*sd)) +
+  geom_pointrange() + 
+  xlab("joint exposure quantile") +
+  ylab("est")
+print(p)
+}
+
+ggplot(all_bkmr, aes(x = quantile, y = est, ymin = est - 1.96 * sd, ymax = est + 1.96 * sd)) +
+  geom_pointrange() + 
+  facet_wrap(~ scenario, ncol = 4) +  # Arrange in a grid (adjust columns as needed)
+  labs(x = "joint exposure quantile", y = "est") +
+  scale_x_continuous(labels = number_format(accuracy = 0.1))
+  theme_minimal()
+```
+

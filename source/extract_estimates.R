@@ -1,5 +1,6 @@
 extract_estimates <- function(model, method){
   if (method == "WQS"){
+    # extract estimated mixture effect
     coef <- coef(model)[2]
     coef_lb <- confint(model)[2, 1]
     coef_ub <- confint(model)[2, 2]
@@ -12,12 +13,40 @@ extract_estimates <- function(model, method){
                            estimate = coef,
                            lb = coef_lb,
                            ub = coef_ub)
-    
+      
     tmp_weights <- data.frame(method = method,
-                              mix_name = weights$mix_name,
-                              estimate = weights$Estimate,
-                              lb = weights$`2.5%`,
-                              ub = weights$`97.5%`)
+                                mix_name = weights$mix_name,
+                                estimate = weights$Estimate,
+                                lb = weights$`2.5%`,
+                                ub = weights$`97.5%`)
+    
+    return(list(tmp_coef, tmp_weights))
+    
+  } else if (method == "WQS2"){
+    # extract estimated mixture effect
+    coef <- coef(model)[-1]
+    coef_lb <- confint(model)[-1, 1]
+    coef_ub <- confint(model)[-1, 2]
+    
+    # extract estimated weights
+    weights_pos <- data.frame(method = paste0(method, ": pos"),
+                                mix_name = model$final_weights$mix_name,
+                                estimate = model$final_weights$`Estimate pos`,
+                                lb = model$final_weights$`2.5% pos`,
+                                ub = model$final_weights$`97.5% pos`)
+    weights_neg <- data.frame(method = paste0(method, ": neg"),
+                                mix_name = model$final_weights$mix_name,
+                                estimate = model$final_weights$`Estimate neg`,
+                                lb = model$final_weights$`2.5% neg`,
+                                ub = model$final_weights$`97.5% neg`)
+      
+    # save results
+    tmp_coef <- data.frame(method = c("WQS2: pos", "WQS2: neg"),
+                           estimate = coef,
+                           lb = coef_lb,
+                           ub = coef_ub)
+    
+    tmp_weights <- rbind(weights_pos, weights_neg)
     
     return(list(tmp_coef, tmp_weights))
     
@@ -47,9 +76,10 @@ extract_estimates <- function(model, method){
     return(list(tmp_coef, tmp_weights))
     
   } else if (method == "qgcomp.boot"){
-    coef <- coef(model)[2]
-    coef_lb <- confint(model)[2, 1]
-    coef_ub <- confint(model)[2, 2]
+    # extract estimated mixture effect
+    coef <- coef(model)[-1]
+    coef_lb <- confint(model)[-1, 1]
+    coef_ub <- confint(model)[-1, 2]
     
     # save results
     tmp_coef <- data.frame(method = method,
@@ -69,11 +99,11 @@ extract_estimates <- function(model, method){
   
     # summary statistics of the predictor-response function
     risks.overall <- OverallRiskSummaries(fit = model, y = simdata$y, Z = simdata[, -1], 
-                                          qs = seq(0, 1, by = 0.1), 
-                                          q.fixed = 0.5, method = "approx")
+                                          qs = seq(0, 1, by = 0.05), 
+                                          q.fixed = 0.5, method = "exact")
     tmp_bkmr <- data.frame(quantile = risks.overall$quantile,
-                                   est = risks.overall$est,
-                                   sd = risks.overall$sd)
+                           est = risks.overall$est,
+                           sd = risks.overall$sd)
     
     return(list(tmp_bkmr, tmp_weights))
     

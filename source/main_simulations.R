@@ -50,8 +50,8 @@ params <- tibble(
 nsim <- 100
 # define number of simulations and parameter scenarios
 if(doLocal) {
-  scenario = 1
-  nsim = 10
+  scenario = 3
+  nsim = 1
 }else{
   # defined from batch script params
   scenario <- as.numeric(commandArgs(trailingOnly=TRUE))

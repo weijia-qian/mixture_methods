@@ -83,14 +83,34 @@ for(i in 1:nsim){
   
   ####################
   # WQS with a positive indice
-  fit.wqs <- gwqs(y ~ wqs, mix_name = paste0("X", 1:5), data = simdata, 
-                  q = 4, validation = 0.6, b1_pos = TRUE, b = 100, rh = 100,
-                  family = "gaussian")
+  fit.wqs <- tryCatch(
+    {
+      gwqs(y ~ wqs, mix_name = paste0("X", 1:5), data = simdata,
+           q = 4, validation = 0.6, b1_pos = TRUE, b = 100, rh = 100,
+           family = "gaussian")
+    },
+    error = function(e) {
+      message(paste("Simulation", i, "failed with error:", e$message))
+      return(NULL)
+    }
+  )
+  
+  if (is.null(fit.wqs)) next
   
   # WQS with two indices
-  fit.wqs2 <- gwqs(y ~ pwqs + nwqs, mix_name = paste0("X", 1:5), data = simdata, 
-                  q = 4, validation = 0.6, b1_pos = TRUE, b = 100, rh = 100,
-                  family = "gaussian")
+  fit.wqs2 <- tryCatch(
+    {
+      gwqs(y ~ pwqs + nwqs, mix_name = paste0("X", 1:5), data = simdata, 
+           q = 4, validation = 0.6, b1_pos = TRUE, b = 100, rh = 100,
+           family = "gaussian")
+    },
+    error = function(e) {
+      message(paste("Simulation", i, "failed with error:", e$message))
+      return(NULL)
+    }
+  )
+  
+  if (is.null(fit.wqs2)) next
   
   # qgcomp.noboot
   fit.qgcomp <- qgcomp.glm.noboot(y ~ X1 + X2 + X3 + X4 + X5, dat = simdata, 

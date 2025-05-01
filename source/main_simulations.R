@@ -31,7 +31,6 @@ params <- tibble(
     c(0, 0, 0, 0, 0),          # scenario 1
     c(0.25, 0, 0, 0, 0),          # scenario 2
     c(0.25, 0.25, 0.25, 0.25, 0), # scenario 3
-    #c(0.5, 0.5, 0, 0, 0),      # scenario 4
     c(0.25, -0.15, 0, 0, 0),     # scenario 4
     c(0.25, 0, 0, 0, 0),        # scenario 5
     c(0.25, 0, 0, 0, 0),          # scenario 6
@@ -50,7 +49,7 @@ params <- tibble(
 nsim <- 100
 # define number of simulations and parameter scenarios
 if(doLocal) {
-  scenario = 3
+  scenario = 16
   nsim = 1
 }else{
   # defined from batch script params
@@ -116,6 +115,7 @@ for(i in 1:nsim){
   fit.qgcomp <- qgcomp.glm.noboot(y ~ X1 + X2 + X3 + X4 + X5, dat = simdata, 
                                   family = gaussian(), q = 4, bayes = TRUE)
   
+  
   # qgcomp.boot
   if (param$beta_X1X1 != 0){
     fit.qgcomp.boot <- qgcomp.glm.boot(y ~ bs(X1) + X2 + X3 + X4 + X5, dat = simdata, 
@@ -148,6 +148,8 @@ for(i in 1:nsim){
   if (param$beta_X1X1 != 0 | param$beta_X1X2 != 0){
     df_coef <- bind_rows(res.wqs[[1]], res.wqs2[[1]], res.qgcomp[[1]], res.qgcomp.boot[[1]], res.bws[[1]]) %>%
       bind_cols(param, seed = seed[i])
+    df_coef$AIC_qgcomp = AIC(fit.qgcomp)
+    df_coef$AIC_qgcomp_boot = AIC(fit.qgcomp.boot)
   } else {
     df_coef <- bind_rows(res.wqs[[1]], res.wqs2[[1]], res.qgcomp[[1]], res.bws[[1]]) %>%
       bind_cols(param, seed = seed[i])

@@ -204,8 +204,10 @@ fit.qgcomp.boot2 <- qgcomp.glm.boot(lnCBCL_ext ~ PM10_z + CO_z + bs(Benzene_z) +
 fit.qgcomp.boot2
 plot(fit.qgcomp.boot2)
 
+AIC(fit.qgcomp$fit)
 AIC(fit.qgcomp.boot$fit)
 AIC(fit.qgcomp.boot2$fit)
+BIC(fit.qgcomp$fit)
 BIC(fit.qgcomp.boot$fit)
 BIC(fit.qgcomp.boot2$fit)
 ```
@@ -230,7 +232,7 @@ ExtractPIPs(fit.bkmr)
 risks.overall <- OverallRiskSummaries(fit = fit.bkmr, 
                                       qs = seq(0, 1, by = 0.05), 
                                       q.fixed = 0.5, method = "exact")
-ggplot(risks.overall, aes(quantile, est, ymin = est - 1.96*sd, ymax = est + 1.96*sd)) +
+ggplot(risks.overall[3:19,], aes(quantile, est, ymin = est - 1.96*sd, ymax = est + 1.96*sd)) +
   geom_pointrange() + 
   xlab("Joint exposure quantile") +
   ylab("Estimate")

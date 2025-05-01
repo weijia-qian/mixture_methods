@@ -65,7 +65,9 @@ all_coef <- all_coef %>%
                               scenario %in% c(19,20,21) ~ "Nonadditive effect"),
          param = ifelse(grepl("^psi2", rownames(all_coef)), "psi2", "psi1"),
          is_significant = (lb > 0 | ub < 0))
-
+all_coef$scenario <- factor(all_coef$scenario, 
+                               levels = c("Null", "Single effect", "Homogeneous effect", "Heterogeneous effect", "Confounding", 
+                                          "Nonlinear effect", "Nonadditive effect"))
 
 ### Type 1 error
 df_type1 <- all_coef %>%
@@ -94,7 +96,7 @@ df_power <- all_coef %>%
   group_by(scenario, rho_X, method) %>%
   summarise(power = mean(is_significant, na.rm = TRUE)) %>%
   pivot_wider(names_from = method, values_from = power)
-kable(df_power, format = "markdown", caption = "Mean power by scenario and method")
+kable(df_power, format = "markdown", digits = 2, caption = "Mean power by scenario and method")
 
 # ggplot(df_power, 
 #        aes(x = method, y = power, fill = method)) +
@@ -148,8 +150,12 @@ all_weights <- all_weights %>%
                                  scenario == "Heterogeneous effect" & mix_name %in% c("X3","X4","X5") ~ 0,
                                  scenario == "Nonadditive effect" & mix_name == "X1" ~ 0.625,
                                  scenario == "Nonadditive effect" & mix_name == "X2" ~ 0.375,
-                                 scenario == "Nonadditive effect" & mix_name %in% c("X3","X4","X5") ~ 0))
-
+                                 scenario == "Nonadditive effect" & mix_name %in% c("X3","X4","X5") ~ 0),
+         method = ifelse(method == "qgcomp.noboot", "qgcomp", method))
+all_weights$scenario <- factor(all_weights$scenario, 
+                               levels = c("Null", "Single effect", "Homogeneous effect", "Heterogeneous effect", "Confounding", 
+                                          "Nonlinear effect", "Nonadditive effect"))
+  
 ### Sensitivity
 df_se <- all_weights %>%
   filter(scenario != "Null") %>%
@@ -158,11 +164,13 @@ df_se <- all_weights %>%
   group_by(scenario, rho_X, method) %>%
   summarise(mean_se = mean(se, na.rm = TRUE))
 
-ggplot(df_se, 
+ggplot(df_se[df_se$rho_X == 0.7, ], 
        aes(x = method, y = mean_se, fill = method)) +
   geom_bar(stat = "identity", position = "stack") +
-  facet_wrap(~ scenario + rho_X) +                           
-  labs(x = "Method", y = "Sensitivity", title = "Mean sensitivity by scenario and method") +
+  facet_wrap(~ scenario) +                           
+  labs(
+    #title = "Mean sensitivity by scenario and method",
+    x = "Method", y = "Sensitivity", fill = "Method") +
   theme_minimal() +
   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
 
@@ -174,11 +182,13 @@ df_sp <- all_weights %>%
   group_by(scenario, rho_X, method) %>%
   summarise(mean_sp = mean(sp, na.rm = TRUE))
 
-ggplot(df_sp, 
+ggplot(df_sp[df_sp$rho_X == 0.4, ], 
        aes(x = method, y = mean_sp, fill = method)) +
   geom_bar(stat = "identity", position = "stack") +
-  facet_wrap(~ scenario + rho_X) +                           
-  labs(x = "Method", y = "Specificity", title = "Mean specificity by scenario and method") +
+  facet_wrap(~ scenario) +                           
+  labs(
+    #title = "Mean sensitivity by scenario and method",
+    x = "Method", y = "Specificity", fill = "Method") +
   theme_minimal() +
   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
 
@@ -197,13 +207,15 @@ df_true_weights <- all_weights %>%
   mutate(method = "truth")
 
 df_weights <- rbind(df_weights, df_true_weights)
-df_weights$method <- factor(df_weights$method, levels = c("truth", "BKMR", "BWS", "qgcomp.noboot", "WQS"))
+df_weights$method <- factor(df_weights$method, levels = c("truth", "BKMR", "BWS", "qgcomp", "WQS"))
 
-ggplot(df_weights, 
+ggplot(df_weights[df_weights$rho_X == 0.7, ], 
        aes(x = method, y = mean_weight, fill = mix_name, alpha = factor(ifelse(scenario == "Null", "light", "dark")))) +
   geom_bar(stat = "identity", position = "stack") +  
-  facet_wrap(~ scenario + rho_X) +                           
-  labs(x = "Method", y = "Weight", fill = "Exposure", title = "Mean weights by scenario and method") +
+  facet_wrap(~ scenario) +                           
+  labs(
+    #title = "Mean weights by scenario and method",
+    x = "Method", y = "Weight", fill = "Exposure") +
   scale_alpha_manual(values = c("light" = 0.5, "dark" = 1)) + 
   guides(alpha = "none") + 
   theme_minimal() +

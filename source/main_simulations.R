@@ -49,7 +49,7 @@ params <- tibble(
 nsim <- 100
 # define number of simulations and parameter scenarios
 if(doLocal) {
-  scenario = 16
+  scenario = 21
   nsim = 1
 }else{
   # defined from batch script params
@@ -124,7 +124,7 @@ for(i in 1:nsim){
   } else if (param$beta_X1X2 != 0){
     fit.qgcomp.boot <- qgcomp.glm.boot(y ~ bs(X1) * bs(X2) + X3 + X4 + X5, dat = simdata, 
                                        expnms = paste0("X", 1:5),
-                                       family = gaussian(), q = 4, B = 200, degree = 2)
+                                       family = gaussian(), q = 4, B = 200, degree = 3)
   }
   
   # BKMR

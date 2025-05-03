@@ -124,7 +124,7 @@ for(i in 1:nsim){
   } else if (param$beta_X1X2 != 0){
     fit.qgcomp.boot <- qgcomp.glm.boot(y ~ bs(X1) * bs(X2) + X3 + X4 + X5, dat = simdata, 
                                        expnms = paste0("X", 1:5),
-                                       family = gaussian(), q = 4, B = 200, degree = 3)
+                                       family = gaussian(), q = 4, B = 200, degree = 2)
   }
   
   # BKMR

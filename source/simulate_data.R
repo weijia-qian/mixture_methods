@@ -3,6 +3,7 @@
 ###############################################################
 simulate_data <- function(
     n = 500,                      # sample size
+    p = 5,                        # number of exposures
     beta_0 = 0,                   # model intercept
     beta_X = c(0, 0, 0, 0, 0),    # beta coefficients for X
     beta_X1X1 = 0,                # beta coefficient for the X1X2 interaction
@@ -11,7 +12,8 @@ simulate_data <- function(
     rho_X = 0,                    # pairwise correlation between X's
     rho_C = 0.7                # correlation between X1 and C
 ){
-    p = length(beta_X) # number of predictors
+  
+    p2 <- length(beta_X) # number of true predictors
 
     # Simulate X
     Sigma <- matrix(rho_X, nrow = p, ncol = p)
@@ -24,7 +26,7 @@ simulate_data <- function(
     C <- (rho_C * X[, 1]) + sqrt(1 - rho_C * rho_C) * rnorm(n)
     
     # Simulate outcome
-    y <- beta_0 + X %*% beta_X + X[, 1]^2 * beta_X1X1 + (X[, 1] * X[, 2]) * beta_X1X2 + C * beta_C + rnorm(n)
+    y <- beta_0 + X[, 1:p2] %*% beta_X + X[, 1]^2 * beta_X1X1 + (X[, 1] * X[, 2]) * beta_X1X2 + C * beta_C + rnorm(n)
     
     res <- data.frame(y = y, 
                       X)

@@ -12,7 +12,7 @@ library(tidyverse)
 library(knitr)
 
 # load simulation results
-folder_path <- "/Users/weijia/Research/Huels/results/20250501"
+folder_path <- "/Users/weijia/Research/Huels/results/20250504"
 rda_files <- list.files(path = folder_path, pattern = "\\.RDA$", full.names = TRUE)
 all_results <- list()
 for (i in 1:length(rda_files)) {
@@ -131,7 +131,7 @@ for (scenario in all_results) {
 }
 
 all_weights <- all_weights %>%
-  filter(!grepl("WQS2", method)) %>%
+  #filter(method != "WQS2: neg") %>%
   mutate(scenario = case_when(scenario %in% c(1,2,3) ~ "Null",
                               scenario %in% c(4,5,6) ~ "Single effect",
                               scenario %in% c(7,8,9) ~ "Homogeneous effect",
@@ -141,15 +141,18 @@ all_weights <- all_weights %>%
                               scenario %in% c(19,20,21) ~ "Nonadditive effect"),
          is_important = ifelse(method == "BKMR", estimate > 0.5, abs(estimate) > 0.2),
          true_predictor = ifelse((mix_name == "X1" & scenario != "Null")|
-                                 (mix_name == "X2" & scenario %in% c("Homogeneous effect", "Heterogeneous effect", "Nonadditive effect")) |
+                                 (mix_name == "X2" & scenario %in% c("Homogeneous effect", "Nonadditive effect")) |
+                                 (mix_name == "X2" & scenario == "Heterogeneous effect" & method != "WQS2: pos") |
                                  (mix_name %in% c("X3","X4") & scenario == "Homogeneous effect"), TRUE, FALSE),
          true_weight = case_when(scenario == "Null" ~ NA,
                                  scenario %in% c("Single effect", "Confounding", "Nonlinear effect") & mix_name == "X1" ~ 1,
                                  scenario %in% c("Single effect", "Confounding", "Nonlinear effect") & mix_name != "X1" ~ 0,
                                  scenario == "Homogeneous effect" & mix_name != "X5" ~ 0.25,
                                  scenario == "Homogeneous effect" & mix_name == "X5" ~ 0,
-                                 scenario == "Heterogeneous effect" & mix_name == "X1" ~ 0.625,
-                                 scenario == "Heterogeneous effect" & mix_name == "X2" ~ 0.375,
+                                 scenario == "Heterogeneous effect" & mix_name == "X1" & method != "WQS2: pos" ~ 0.625,
+                                 scenario == "Heterogeneous effect" & mix_name == "X1" & method == "WQS2: pos" ~ 1,
+                                 scenario == "Heterogeneous effect" & mix_name == "X2" & method != "WQS2: pos" ~ 0.375,
+                                 scenario == "Heterogeneous effect" & mix_name == "X2" & method == "WQS2: pos" ~ 0,
                                  scenario == "Heterogeneous effect" & mix_name %in% c("X3","X4","X5") ~ 0,
                                  scenario == "Nonadditive effect" & mix_name == "X1" ~ 0.625,
                                  scenario == "Nonadditive effect" & mix_name == "X2" ~ 0.375,
@@ -167,7 +170,7 @@ df_se <- all_weights %>%
   group_by(scenario, rho_X, method) %>%
   summarise(mean_se = mean(se, na.rm = TRUE))
 
-ggplot(df_se[df_se$rho_X == 0.7, ], 
+ggplot(df_se[df_se$rho_X == 0.4, ], 
        aes(x = method, y = mean_se, fill = method)) +
   geom_bar(stat = "identity", position = "stack") +
   facet_wrap(~ scenario) +                           
@@ -210,7 +213,7 @@ df_true_weights <- all_weights %>%
   mutate(method = "truth")
 
 df_weights <- rbind(df_weights, df_true_weights)
-df_weights$method <- factor(df_weights$method, levels = c("truth", "BKMR", "BWS", "qgcomp", "WQS"))
+df_weights$method <- factor(df_weights$method, levels = c("truth", "BKMR", "BWS", "qgcomp", "WQS", "WQS2: pos"))
 
 ggplot(df_weights[df_weights$rho_X == 0.7, ], 
        aes(x = method, y = mean_weight, fill = mix_name, alpha = factor(ifelse(scenario == "Null", "light", "dark")))) +
@@ -245,6 +248,10 @@ ggplot(all_bkmr, aes(x = quantile, y = est, ymin = est - 1.96 * sd, ymax = est +
 
 ### AIC comparison
 ```{r}
+all_coef %>%
+  group_by(scenario, rho_X) %>%
+  summarise(unique_seed_count = n_distinct(seed), .groups = 'drop')
+
 df_aic <- all_coef %>%
   group_by(scenario, rho_X, seed) %>%
   summarize(favor_linear = AIC_qgcomp[1] < AIC_qgcomp_boot[1], .groups = "drop") %>%

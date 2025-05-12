@@ -199,7 +199,7 @@ plot(fit.qgcomp.gamma)
 
 fit.qgcomp.boot2 <- qgcomp.glm.boot(lnCBCL_ext ~ PM10_z + CO_z + bs(Benzene_z) + bs(Toluene_z) + bs(NO2_z) + SO2_z 
                             + maternal_age_enr + maternal_hiv + ethnicity + SES_inv, 
-                            expnms = joint.expo, data = data, family = gaussian(), q = 4, bayes = TRUE, degree = 2,
+                            expnms = joint.expo, data = data, family = gaussian(), q = 4, bayes = TRUE, degree = 3,
                             B = 200, seed = 916)
 fit.qgcomp.boot2
 plot(fit.qgcomp.boot2)

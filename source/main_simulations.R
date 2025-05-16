@@ -27,7 +27,7 @@ source(here("source", "extract_estimates.R"))
 params <- tibble(
   scenario = 1:21,
   n = 500,
-  p = 10,
+  p = 20,
   beta_X = rep(list(
     c(0, 0, 0, 0, 0),          # scenario 1
     c(0.25, 0, 0, 0, 0),          # scenario 2
@@ -86,7 +86,7 @@ for(i in 1:nsim){
   # WQS with a positive indice
   fit.wqs <- tryCatch(
     {
-      gwqs(y ~ wqs, mix_name = paste0("X", 1:10), data = simdata,
+      gwqs(y ~ wqs, mix_name = paste0("X", 1:20), data = simdata,
            q = 4, validation = 0.6, b1_pos = TRUE, b = 100, rh = 100,
            family = "gaussian")
     },
@@ -101,7 +101,7 @@ for(i in 1:nsim){
   # WQS with two indices
   fit.wqs2 <- tryCatch(
     {
-      gwqs(y ~ pwqs + nwqs, mix_name = paste0("X", 1:10), data = simdata, 
+      gwqs(y ~ pwqs + nwqs, mix_name = paste0("X", 1:20), data = simdata, 
            q = 4, validation = 0.6, b1_pos = TRUE, b = 100, rh = 100,
            family = "gaussian")
     },
@@ -114,18 +114,18 @@ for(i in 1:nsim){
   if (is.null(fit.wqs2)) next
   
   # qgcomp.noboot
-  fit.qgcomp <- qgcomp.glm.noboot(y ~ X1 + X2 + X3 + X4 + X5 + X6 + X7 + X8 + X9 + X10, dat = simdata, 
+  fit.qgcomp <- qgcomp.glm.noboot(y ~ ., dat = simdata, 
                                   family = gaussian(), q = 4, bayes = TRUE)
   
   
   # qgcomp.boot
   if (param$beta_X1X1 != 0){
-    fit.qgcomp.boot <- qgcomp.glm.boot(y ~ bs(X1) + X2 + X3 + X4 + X5 + X6 + X7 + X8 + X9 + X10, dat = simdata, 
-                                       expnms = paste0("X", 1:10),
+    fit.qgcomp.boot <- qgcomp.glm.boot(y ~ bs(X1) + X2 + X3 + X4 + X5 + X6 + X7 + X8 + X9 + X10 + X11 + X12 + X13 + X14 + X15 + X16 + X17 + X18 + X19 + X20, dat = simdata, 
+                                       expnms = paste0("X", 1:20),
                                        family = gaussian(), q = 4, B = 200, degree = 2)
   } else if (param$beta_X1X2 != 0){
-    fit.qgcomp.boot <- qgcomp.glm.boot(y ~ bs(X1) * bs(X2) + X3 + X4 + X5 + X6 + X7 + X8 + X9 + X10, dat = simdata, 
-                                       expnms = paste0("X", 1:10),
+    fit.qgcomp.boot <- qgcomp.glm.boot(y ~ bs(X1) * bs(X2) + X3 + X4 + X5 + X6 + X7 + X8 + X9 + X10 + X11 + X12 + X13 + X14 + X15 + X16 + X17 + X18 + X19 + X20, dat = simdata, 
+                                       expnms = paste0("X", 1:20),
                                        family = gaussian(), q = 4, B = 200, degree = 2)
   }
   

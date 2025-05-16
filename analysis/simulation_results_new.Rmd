@@ -12,7 +12,7 @@ library(tidyverse)
 library(knitr)
 
 # load simulation results
-folder_path <- "/Users/weijia/Research/Huels/results/20250504"
+folder_path <- "/Users/weijia/Research/Huels/results/20250513"
 rda_files <- list.files(path = folder_path, pattern = "\\.RDA$", full.names = TRUE)
 all_results <- list()
 for (i in 1:length(rda_files)) {
@@ -31,12 +31,15 @@ Execution halted
 
 ### Type 1 Error
 ```{r}
-all_coef <- data.frame()
+all_coef_list <- list() 
+
 for (scenario in all_results) {
   for (iteration in scenario) {
-    all_coef <- rbind(all_coef, iteration$coef)
+    all_coef_list[[length(all_coef_list) + 1]] <- iteration$coef
   }
 }
+
+all_coef <- bind_rows(all_coef_list)
 
 all_bkmr <- data.frame()
 for (scenario in all_results) {
@@ -53,7 +56,7 @@ df_bkmr_q3 <- all_bkmr %>%
          ub = est + 1.96 * sd) %>%
   select(-quantile, -est, -sd)
 
-all_coef <- rbind(all_coef, df_bkmr_q3)
+all_coef <- bind_rows(all_coef, df_bkmr_q3)
 
 all_coef <- all_coef %>%
   mutate(scenario = case_when(scenario %in% c(1,2,3) ~ "Null",
@@ -131,7 +134,7 @@ for (scenario in all_results) {
 }
 
 all_weights <- all_weights %>%
-  #filter(method != "WQS2: neg") %>%
+  filter(method != "WQS2: neg") %>%
   mutate(scenario = case_when(scenario %in% c(1,2,3) ~ "Null",
                               scenario %in% c(4,5,6) ~ "Single effect",
                               scenario %in% c(7,8,9) ~ "Homogeneous effect",
@@ -139,7 +142,7 @@ all_weights <- all_weights %>%
                               scenario %in% c(13,14,15) ~ "Confounding",
                               scenario %in% c(16,17,18) ~ "Nonlinear effect",
                               scenario %in% c(19,20,21) ~ "Nonadditive effect"),
-         is_important = ifelse(method == "BKMR", estimate > 0.5, abs(estimate) > 0.2),
+         is_important = ifelse(method == "BKMR", estimate > 0.5, abs(estimate) > 0.1),
          true_predictor = ifelse((mix_name == "X1" & scenario != "Null")|
                                  (mix_name == "X2" & scenario %in% c("Homogeneous effect", "Nonadditive effect")) |
                                  (mix_name == "X2" & scenario == "Heterogeneous effect" & method != "WQS2: pos") |
@@ -147,8 +150,8 @@ all_weights <- all_weights %>%
          true_weight = case_when(scenario == "Null" ~ NA,
                                  scenario %in% c("Single effect", "Confounding", "Nonlinear effect") & mix_name == "X1" ~ 1,
                                  scenario %in% c("Single effect", "Confounding", "Nonlinear effect") & mix_name != "X1" ~ 0,
-                                 scenario == "Homogeneous effect" & mix_name != "X5" ~ 0.25,
-                                 scenario == "Homogeneous effect" & mix_name == "X5" ~ 0,
+                                 scenario == "Homogeneous effect" & mix_name %in% c("X1","X2","X3","X4") ~ 0.25,
+                                 scenario == "Homogeneous effect" & !(mix_name %in% c("X1","X2","X3","X4")) ~ 0,
                                  scenario == "Heterogeneous effect" & mix_name == "X1" & method != "WQS2: pos" ~ 0.625,
                                  scenario == "Heterogeneous effect" & mix_name == "X1" & method == "WQS2: pos" ~ 1,
                                  scenario == "Heterogeneous effect" & mix_name == "X2" & method != "WQS2: pos" ~ 0.375,
@@ -248,15 +251,16 @@ ggplot(all_bkmr, aes(x = quantile, y = est, ymin = est - 1.96 * sd, ymax = est +
 
 ### AIC comparison
 ```{r}
-all_coef %>%
-  group_by(scenario, rho_X) %>%
-  summarise(unique_seed_count = n_distinct(seed), .groups = 'drop')
+# all_coef %>%
+#   group_by(scenario, rho_X) %>%
+#   summarise(unique_seed_count = n_distinct(seed), .groups = 'drop')
 
 df_aic <- all_coef %>%
+  filter(scenario %in% c("Nonlinear effect", "Nonadditive effect")) %>%
   group_by(scenario, rho_X, seed) %>%
-  summarize(favor_linear = AIC_qgcomp[1] < AIC_qgcomp_boot[1], .groups = "drop") %>%
+  summarize(favor_nonlinear = AIC_qgcomp[1] > AIC_qgcomp_boot[1], .groups = "drop") %>%
   group_by(scenario, rho_X) %>%
-  summarize(pct_favor_linear = mean(favor_linear), .groups = "drop")
-
+  summarize(pct_favor_nonlinear = round(mean(favor_nonlinear), 4), .groups = "drop")
+kable(df_aic, format = "markdown", caption = "Percentage of iterations favoring nonlinear qgcomp models")
 ```
 

@@ -118,6 +118,7 @@ extract_estimates <- function(model, method){
     weights <- colMeans(df_bws)[-1]
     weights_lb <- apply(df_bws, 2, quantile, probs = 0.025)[-1]
     weights_ub <- apply(df_bws, 2, quantile, probs = 0.975)[-1]
+    p <- length(weights)
     
     # save results
     tmp_coef <- data.frame(method = method,
@@ -126,7 +127,7 @@ extract_estimates <- function(model, method){
                            ub = coef_ub)
     
     tmp_weights <- data.frame(method = method,
-                              mix_name = paste0("X",1:5),
+                              mix_name = paste0("X",1:p),
                               estimate = weights,
                               lb = weights_lb,
                               ub = weights_ub)

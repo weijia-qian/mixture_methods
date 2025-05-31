@@ -27,22 +27,24 @@ source(here("source", "extract_estimates.R"))
 params <- tibble(
   scenario = 1:21,
   n = 500,
-  p = 20,
+  p = 5,
   beta_X = rep(list(
     c(0, 0, 0, 0, 0),          # scenario 1
     c(0.25, 0, 0, 0, 0),          # scenario 2
-    c(0.25, 0.25, 0.25, 0.25, 0), # scenario 3
+    c(0.25/4, 0.25/4, 0.25/4, 0.25/4, 0), # scenario 3
     c(0.25, -0.15, 0, 0, 0),     # scenario 4
-    c(0.25, 0, 0, 0, 0),        # scenario 5
+    c(0, 0, 0, 0, 0),        # scenario 5
     c(0.25, 0, 0, 0, 0),          # scenario 6
     c(0.25, 0.15, 0, 0, 0)         # scenario 7
   ), each = 3),
   beta_C = rep(c(0, 0, 0, 0, 0.25, 0, 0), each = 3),     # scenario 5 has confounding
-  beta_X1X1 = rep(c(0, 0, 0, 0, 0, 0.15, 0), each = 3),  # scenario 6 has a nonlinear effect
-  beta_X1X2 = rep(c(0, 0, 0, 0, 0, 0, 0.15), each = 3),  # scenario 7 has an interaction effect
+  beta_X1X1 = rep(c(0, 0, 0, 0, 0, -0.15, 0), each = 3),  # scenario 6 has a nonlinear effect
+  beta_X1X2 = rep(c(0, 0, 0, 0, 0, 0, -0.15), each = 3),  # scenario 7 has an interaction effect
   rho_X = rep(c(0, 0.4, 0.7), times = 7), 
   rho_C = rep(c(0, 0, 0, 0, 0.7, 0, 0), each = 3)     # scenario 5 has confounding
 )
+
+params <- params[c(7:9, 13:21),]
 
 ###############################################################
 ## start simulation code
@@ -86,7 +88,7 @@ for(i in 1:nsim){
   # WQS with a positive indice
   fit.wqs <- tryCatch(
     {
-      gwqs(y ~ wqs, mix_name = paste0("X", 1:20), data = simdata,
+      gwqs(y ~ wqs, mix_name = paste0("X", 1:5), data = simdata,
            q = 4, validation = 0.6, b1_pos = TRUE, b = 100, rh = 100,
            family = "gaussian")
     },
@@ -101,7 +103,7 @@ for(i in 1:nsim){
   # WQS with two indices
   fit.wqs2 <- tryCatch(
     {
-      gwqs(y ~ pwqs + nwqs, mix_name = paste0("X", 1:20), data = simdata, 
+      gwqs(y ~ pwqs + nwqs, mix_name = paste0("X", 1:5), data = simdata, 
            q = 4, validation = 0.6, b1_pos = TRUE, b = 100, rh = 100,
            family = "gaussian")
     },
@@ -120,12 +122,12 @@ for(i in 1:nsim){
   
   # qgcomp.boot
   if (param$beta_X1X1 != 0){
-    fit.qgcomp.boot <- qgcomp.glm.boot(y ~ bs(X1) + X2 + X3 + X4 + X5 + X6 + X7 + X8 + X9 + X10 + X11 + X12 + X13 + X14 + X15 + X16 + X17 + X18 + X19 + X20, dat = simdata, 
-                                       expnms = paste0("X", 1:20),
+    fit.qgcomp.boot <- qgcomp.glm.boot(y ~ bs(X1) + X2 + X3 + X4 + X5, dat = simdata, 
+                                       expnms = paste0("X", 1:5),
                                        family = gaussian(), q = 4, B = 200, degree = 2)
   } else if (param$beta_X1X2 != 0){
-    fit.qgcomp.boot <- qgcomp.glm.boot(y ~ bs(X1) * bs(X2) + X3 + X4 + X5 + X6 + X7 + X8 + X9 + X10 + X11 + X12 + X13 + X14 + X15 + X16 + X17 + X18 + X19 + X20, dat = simdata, 
-                                       expnms = paste0("X", 1:20),
+    fit.qgcomp.boot <- qgcomp.glm.boot(y ~ bs(X1) * bs(X2) + X3 + X4 + X5, dat = simdata, 
+                                       expnms = paste0("X", 1:5),
                                        family = gaussian(), q = 4, B = 200, degree = 2)
   }
   

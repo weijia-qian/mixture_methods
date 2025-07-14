@@ -26,7 +26,7 @@ source(here("source", "extract_estimates.R"))
 ###############################################################
 params <- tibble(
   scenario = 1:21,
-  n = 500,
+  n = 2000,
   p = 5,
   beta_X = rep(list(
     c(0, 0, 0, 0, 0),          # scenario 1
@@ -44,7 +44,8 @@ params <- tibble(
   rho_C = rep(c(0, 0, 0, 0, 0.7, 0, 0), each = 3)     # scenario 5 has confounding
 )
 
-params <- params[c(7:9, 13:21),]
+params <- params %>%
+  filter(rho_X == 0.4)
 
 ###############################################################
 ## start simulation code

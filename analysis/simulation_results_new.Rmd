@@ -8,11 +8,12 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 library(CCMHr)
-library(tidyverse)
+library(here)
 library(knitr)
+library(tidyverse)
 
 # load simulation results
-folder_path <- "/Users/weijia/Research/Huels/results/20250519"
+folder_path <- "/Users/weijia/Research/Huels/results/20250625"
 rda_files <- list.files(path = folder_path, pattern = "\\.RDA$", full.names = TRUE)
 all_results <- list()
 for (i in 1:length(rda_files)) {
@@ -21,16 +22,13 @@ for (i in 1:length(rda_files)) {
 ```
 
 ### Updates
-- Ran simulations with 100 iterations and analyzed the results
-- In 2 high-correlation scenarios, gWQS threw an error:
-Error in vif.default(i$mfit$m_f) : 
-  there are aliased coefficients in the model
-Calls: gwqs ... resolve.list -> signalConditionsASAP -> signalConditions
-Execution halted
-3. For BKMR, I used the significance of the relative overall risk at 75th percentile (compared to 50 percentile) to calculate type1 error and power.
+1. Simulate with 10 exposures
 
 ### Type 1 Error
-```{r}
+- Null effect: BKMR has the lowest type 1 error rate
+- 2iWQS shows high type 1 error rate when unmeasured confounding presents
+
+```{r, include=FALSE}
 all_coef_list <- list() 
 
 for (scenario in all_results) {
@@ -44,7 +42,8 @@ all_coef <- bind_rows(all_coef_list)
 all_bkmr <- data.frame()
 for (scenario in all_results) {
   for (iteration in scenario) {
-    all_bkmr <- rbind(all_bkmr, iteration$bkmr)
+    all_bkmr <- bind_rows(all_bkmr, iteration$bkmr)
+    #all_bkmr <- rbind(all_bkmr, iteration$bkmr[, -which(names(iteration$bkmr) == "p")])
   }
 }
 
@@ -54,7 +53,7 @@ df_bkmr_q3 <- all_bkmr %>%
          estimate = est,
          lb = est - 1.96 * sd,
          ub = est + 1.96 * sd) %>%
-  select(-quantile, -est, -sd)
+  dplyr::select(-quantile, -est, -sd, -p)
 
 all_coef <- bind_rows(all_coef, df_bkmr_q3)
 
@@ -69,40 +68,53 @@ all_coef <- all_coef %>%
          param = case_when(grepl("^psi2", rownames(all_coef)) ~ "psi2",
                            grepl("^psi3", rownames(all_coef)) ~ "psi3",
                            .default = "psi1"),
-         is_significant = (lb > 0 | ub < 0)) %>%
-  filter(seed != 664)
+         is_significant = (lb > 0 | ub < 0),
+         method = recode(method,
+                         `WQS2: pos`    = "2iWQS: pos",
+                         `WQS2: neg`    = "2iWQS: neg",
+                         `qgcomp.noboot` = "linear qgcomp",
+                         `qgcomp.boot` = "nonlinear qgcomp")) 
+  # filter(seed != 664)
+
 all_coef$scenario <- factor(all_coef$scenario, 
                             levels = c("Null", "Single effect", "Homogeneous effect", "Heterogeneous effect", "Confounding", 
                                           "Nonlinear effect", "Nonadditive effect"))
+all_coef$method <- factor(all_coef$method, 
+                            levels = c("BKMR", "BWS", "linear qgcomp", "nonlinear qgcomp", "WQS", "2iWQS: pos", "2iWQS: neg"))
 
 ### Type 1 error
 df_type1 <- all_coef %>%
-  filter(scenario == "Null") %>%
+  #filter(scenario == "Null") %>%
+  filter(scenario == "Null" | scenario == "Confounding") %>%
   group_by(scenario, rho_X, method) %>%
   summarise(type1_error = mean(is_significant, na.rm = TRUE)) %>%
   pivot_wider(names_from = method, values_from = type1_error)
-kable(df_type1, format = "markdown", caption = "Type 1 error by scenario and method")
+kable(df_type1, format = "markdown", digit = 2, caption = "Type 1 error by scenario and method")
 
 df_type1_neg <- all_coef %>%
-  filter(method == "WQS2: neg" & scenario != "Heterogeneous effect") %>%
+  filter(method == "2iWQS: neg" & scenario != "Heterogeneous effect") %>%
   group_by(scenario, rho_X, method) %>%
   summarise(type1_error = mean(is_significant, na.rm = TRUE)) %>%
   pivot_wider(names_from = rho_X, values_from = type1_error)
-kable(df_type1_neg, format = "markdown", caption = "Mean type 1 error of 2iWQS negative index")
+kable(df_type1_neg, format = "markdown", digit = 2, caption = "Mean type 1 error of 2iWQS negative index")
 ```
 
 ### Power
-- BKMR and linear qgcomp model have poor power in the heterogeneous effect scenario.
-- Power of 2iWQS decreases significantly when exposures are highly correlated.
+- BKMR has extremely low power in most scenarios
+- Power of 2iWQS decreases significantly when exposures are highly correlated, while power of linear qgcomp increases as correlation increases
+- Power of 2iWQS is lower that that of WQS in most scenarios
 
 ```{r}
 ### Power
 df_power <- all_coef %>%
-  filter(scenario != "Null" & !(method %in% c("WQS2: neg", "qgcomp.boot"))) %>%
+  filter(scenario != "Null" & !(method %in% c("2iWQS: neg", "nonlinear qgcomp"))) %>%
   group_by(scenario, rho_X, method) %>%
   summarise(power = mean(is_significant, na.rm = TRUE)) %>%
   pivot_wider(names_from = method, values_from = power)
 kable(df_power, format = "markdown", digits = 2, caption = "Mean power by scenario and method")
+
+df_power$nX <- 20
+df_power_20 <- df_power
 
 # ggplot(df_power, 
 #        aes(x = method, y = power, fill = method)) +
@@ -113,23 +125,60 @@ kable(df_power, format = "markdown", digits = 2, caption = "Mean power by scenar
 #   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
 
 df_power_2 <- all_coef %>%
-  filter(method == "qgcomp.boot") %>%
+  filter(method == "nonlinear qgcomp") %>%
   group_by(scenario, rho_X, method, param) %>%
   summarise(power = mean(is_significant, na.rm = TRUE)) %>%
   pivot_wider(names_from = param, values_from = power)
-kable(df_power_2, format = "markdown", caption = "Mean power of nonlinear qgcomp model")
+kable(df_power_2, format = "markdown", digits = 2, caption = "Mean power of nonlinear qgcomp model")
+```
+
+```{r}
+# combine datasets
+all_power <- rbind(df_power_5, df_power_10, df_power_20)
+saveRDS(all_power, here("results", "all_power.rds"))
+
+# pivot to long format
+all_power_long <- all_power %>%
+  filter(rho_X == 0 & scenario != "Confounding") %>%
+  pivot_longer(
+    cols = c(BKMR, BWS, WQS, `WQS2: pos`, qgcomp.noboot),
+    names_to = "method",
+    values_to = "power"
+  ) %>%
+  mutate(method = recode(method,
+                         `WQS2: pos`    = "2iWQS: pos",
+                         `WQS2: neg`    = "2iWQS: neg",
+                         `qgcomp.noboot` = "qgcomp",
+                         `qgcomp.boot` = "qgcomp nonlinear"))
+all_power_long$method <- factor(all_power_long$method, 
+                            levels = c("BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS: pos", "2iWQS: neg"))  
+
+# plot
+ggplot(all_power_long, aes(x = nX, y = power, color = method, group = method)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~ scenario) +
+  scale_x_continuous(breaks = unique(all_power_long$nX)) +
+  labs(
+    x     = "Number of Exposures",
+    y     = "Power",
+    color = "Method"
+   #title = expression(Power~by~Number~of~Exposures~(rho == 0.7))
+  ) +
+  theme_minimal()
 ```
 
 ### Sensitivity and Specificity
-- BKMR has the highest sensitivity across all scenarios.
-- In the heterogeneous effect scenario, nonlinear qgcomp model has higher sensitivity than BWS and WQS.
-- BWS has the highest specificity across all scenarios.
-- BKMR has the lowest specificity in many scenarios.
+- BWS and WQS have low sensitivity in the heterogeneous effect scenario
+- All five methods have almost perfect sensitivity in the other scenarios
+- BKMR has extremely low specificity across all scenarios
+- For all methods, specificity decreases as number of exposure increases (compared to 5 or 10 exposures)
+
 ```{r}
 all_weights <- data.frame()
 for (scenario in all_results) {
   for (iteration in scenario) {
-    all_weights <- rbind(all_weights, iteration$weights)
+    all_weights <- bind_rows(all_weights, iteration$weights)
   }
 }
 
@@ -142,14 +191,17 @@ all_weights <- all_weights %>%
                               scenario %in% c(13,14,15) ~ "Confounding",
                               scenario %in% c(16,17,18) ~ "Nonlinear effect",
                               scenario %in% c(19,20,21) ~ "Nonadditive effect"),
-         is_important = ifelse(method == "BKMR", estimate > 0.5, abs(estimate) > 0.1),
-         true_predictor = ifelse((mix_name == "X1" & scenario != "Null")|
+         is_important = ifelse(method == "BKMR", estimate > 0.5, abs(estimate) > 0.2),
+         true_predictor = ifelse((mix_name == "X1" & !(scenario %in% c("Null", "Confounding")))|
                                  (mix_name == "X2" & scenario %in% c("Homogeneous effect", "Nonadditive effect")) |
                                  (mix_name == "X2" & scenario == "Heterogeneous effect" & method != "WQS2: pos") |
                                  (mix_name %in% c("X3","X4") & scenario == "Homogeneous effect"), TRUE, FALSE),
-         true_weight = case_when(scenario == "Null" ~ NA,
-                                 scenario %in% c("Single effect", "Confounding", "Nonlinear effect") & mix_name == "X1" ~ 1,
-                                 scenario %in% c("Single effect", "Confounding", "Nonlinear effect") & mix_name != "X1" ~ 0,
+         true_weight = case_when(scenario %in% c("Null", "Confounding") ~ NA,
+                                 scenario %in% c("Single effect", "Nonlinear effect") & mix_name == "X1" ~ 1,
+                                 scenario %in% c("Single effect", "Nonlinear effect") & mix_name != "X1" ~ 0,
+                                 # scenario == "Null" ~ NA,
+                                 # scenario %in% c("Single effect", "Confounding", "Nonlinear effect") & mix_name == "X1" ~ 1,
+                                 # scenario %in% c("Single effect", "Confounding", "Nonlinear effect") & mix_name != "X1" ~ 0,
                                  scenario == "Homogeneous effect" & mix_name %in% c("X1","X2","X3","X4") ~ 0.25,
                                  scenario == "Homogeneous effect" & !(mix_name %in% c("X1","X2","X3","X4")) ~ 0,
                                  scenario == "Heterogeneous effect" & mix_name == "X1" & method != "WQS2: pos" ~ 0.625,
@@ -160,20 +212,26 @@ all_weights <- all_weights %>%
                                  scenario == "Nonadditive effect" & mix_name == "X1" ~ 0.625,
                                  scenario == "Nonadditive effect" & mix_name == "X2" ~ 0.375,
                                  scenario == "Nonadditive effect" & mix_name %in% c("X3","X4","X5") ~ 0),
-         method = ifelse(method == "qgcomp.noboot", "qgcomp", method))
+         method = recode(method,
+                         `WQS2: pos`    = "2iWQS: pos",
+                         `WQS2: neg`    = "2iWQS: neg",
+                         `qgcomp.noboot` = "qgcomp",
+                         `qgcomp.boot` = "qgcomp nonlinear"))
 all_weights$scenario <- factor(all_weights$scenario, 
                                levels = c("Null", "Single effect", "Homogeneous effect", "Heterogeneous effect", "Confounding", 
                                           "Nonlinear effect", "Nonadditive effect"))
-  
+all_weights$method <- factor(all_weights$method, 
+                            levels = c("BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS: pos", "2iWQS: neg"))
+
 ### Sensitivity
 df_se <- all_weights %>%
-  filter(scenario != "Null") %>%
+  filter(scenario != "Null" & scenario != "Confounding") %>%
   group_by(scenario, rho_X, method, seed) %>%
   summarise(se = sum(is_important & true_predictor) / sum(true_predictor))  %>%
   group_by(scenario, rho_X, method) %>%
   summarise(mean_se = mean(se, na.rm = TRUE))
 
-ggplot(df_se[df_se$rho_X == 0.4, ], 
+ggplot(df_se[df_se$rho_X == 0.7, ], 
        aes(x = method, y = mean_se, fill = method)) +
   geom_bar(stat = "identity", position = "stack") +
   facet_wrap(~ scenario) +                           
@@ -185,13 +243,13 @@ ggplot(df_se[df_se$rho_X == 0.4, ],
 
 ### Specificity
 df_sp <- all_weights %>%
-  filter(scenario != "Null") %>%
+  #filter(scenario != "Null") %>%
   group_by(scenario, rho_X, method, seed) %>%
   summarise(sp = sum(!is_important & !true_predictor) / sum(!true_predictor))  %>%
   group_by(scenario, rho_X, method) %>%
   summarise(mean_sp = mean(sp, na.rm = TRUE))
 
-ggplot(df_sp[df_sp$rho_X == 0.4, ], 
+ggplot(df_sp[df_sp$rho_X == 0.7, ], 
        aes(x = method, y = mean_sp, fill = method)) +
   geom_bar(stat = "identity", position = "stack") +
   facet_wrap(~ scenario) +                           
@@ -216,10 +274,10 @@ df_true_weights <- all_weights %>%
   mutate(method = "truth")
 
 df_weights <- rbind(df_weights, df_true_weights)
-df_weights$method <- factor(df_weights$method, levels = c("truth", "BKMR", "BWS", "qgcomp", "WQS", "WQS2: pos"))
+df_weights$method <- factor(df_weights$method, levels = c("truth", "BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS: pos", "2iWQS: neg"))
 
 ggplot(df_weights[df_weights$rho_X == 0.7, ], 
-       aes(x = method, y = mean_weight, fill = mix_name, alpha = factor(ifelse(scenario == "Null", "light", "dark")))) +
+       aes(x = method, y = mean_weight, fill = mix_name, alpha = factor(ifelse(scenario %in% c("Null", "Confounding"), "light", "dark")))) +
   geom_bar(stat = "identity", position = "stack") +  
   facet_wrap(~ scenario) +                           
   labs(

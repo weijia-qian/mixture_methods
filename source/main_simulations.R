@@ -89,7 +89,7 @@ results = vector("list", length = nsim)
 
 # run simulations
 for(i in 1:nsim){
-  cat("batch:", batch, ", scenario:", scenario, ", i:", i, "\n")
+  cat("batch:", batch, ", i:", i, "\n")
   set.seed(seed[i])
   
   ####################

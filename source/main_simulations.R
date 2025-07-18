@@ -24,8 +24,29 @@ source(here("source", "extract_estimates.R"))
 ###############################################################
 ## set simulation design elements
 ###############################################################
+# params <- tibble(
+#   scenario = 1:21,
+#   n = 2000,
+#   p = 5,
+#   beta_X = rep(list(
+#     c(0, 0, 0, 0, 0),          # scenario 1
+#     c(0.25, 0, 0, 0, 0),          # scenario 2
+#     c(0.25/4, 0.25/4, 0.25/4, 0.25/4, 0), # scenario 3
+#     c(0.25, -0.15, 0, 0, 0),     # scenario 4
+#     c(0, 0, 0, 0, 0),        # scenario 5
+#     c(0.25, 0, 0, 0, 0),          # scenario 6
+#     c(0.25, 0.15, 0, 0, 0)         # scenario 7
+#   ), each = 3),
+#   beta_C = rep(c(0, 0, 0, 0, 0.25, 0, 0), each = 3),     # scenario 5 has confounding
+#   beta_X1X1 = rep(c(0, 0, 0, 0, 0, -0.15, 0), each = 3),  # scenario 6 has a nonlinear effect
+#   beta_X1X2 = rep(c(0, 0, 0, 0, 0, 0, -0.15), each = 3),  # scenario 7 has an interaction effect
+#   rho_X = rep(c(0, 0.4, 0.7), times = 7), 
+#   rho_C = rep(c(0, 0, 0, 0, 0.7, 0, 0), each = 3),     # scenario 5 has confounding,
+# )
+
 params <- tibble(
-  scenario = 1:21,
+  batch = 1:140,
+  scenario = rep(c(2,5,8,11,14,17,20), each = 20),
   n = 2000,
   p = 5,
   beta_X = rep(list(
@@ -36,34 +57,31 @@ params <- tibble(
     c(0, 0, 0, 0, 0),        # scenario 5
     c(0.25, 0, 0, 0, 0),          # scenario 6
     c(0.25, 0.15, 0, 0, 0)         # scenario 7
-  ), each = 3),
-  beta_C = rep(c(0, 0, 0, 0, 0.25, 0, 0), each = 3),     # scenario 5 has confounding
-  beta_X1X1 = rep(c(0, 0, 0, 0, 0, -0.15, 0), each = 3),  # scenario 6 has a nonlinear effect
-  beta_X1X2 = rep(c(0, 0, 0, 0, 0, 0, -0.15), each = 3),  # scenario 7 has an interaction effect
-  rho_X = rep(c(0, 0.4, 0.7), times = 7), 
-  rho_C = rep(c(0, 0, 0, 0, 0.7, 0, 0), each = 3)     # scenario 5 has confounding
+  ), each = 20),
+  beta_C = rep(c(0, 0, 0, 0, 0.25, 0, 0), each = 20),     # scenario 5 has confounding
+  beta_X1X1 = rep(c(0, 0, 0, 0, 0, -0.15, 0), each = 20),  # scenario 6 has a nonlinear effect
+  beta_X1X2 = rep(c(0, 0, 0, 0, 0, 0, -0.15), each = 20),  # scenario 7 has an interaction effect
+  rho_X = rep(c(0.4), times = 140), 
+  rho_C = rep(c(0, 0, 0, 0, 0.7, 0, 0), each = 20),     # scenario 5 has confounding,
 )
-
-params <- params %>%
-  filter(rho_X == 0.4)
 
 ###############################################################
 ## start simulation code
 ###############################################################
-nsim <- 100
+nsim <- 5
 # define number of simulations and parameter scenarios
 if(doLocal) {
-  scenario = 21
+  batch = 1
   nsim = 1
 }else{
   # defined from batch script params
-  scenario <- as.numeric(commandArgs(trailingOnly=TRUE))
+  batch <- as.numeric(commandArgs(trailingOnly=TRUE))
 }
 
 # define simulation scenario
 #for (scenario in 11){
 
-param <- params[scenario, ]
+param <- params[batch, ]
 
 # generate a random seed for each simulated dataset
 seed <- floor(runif(nsim, 1, 900))
@@ -71,7 +89,7 @@ results = vector("list", length = nsim)
 
 # run simulations
 for(i in 1:nsim){
-  cat("scenario:", scenario, ", i:", i, "\n")
+  cat("batch:", batch, ", scenario:", scenario, ", i:", i, "\n")
   set.seed(seed[i])
   
   ####################
@@ -180,6 +198,6 @@ for(i in 1:nsim){
 date = gsub("-", "", Sys.Date())
 dir.create(file.path(here("results"), date), showWarnings = FALSE)
 
-filename = paste0(here("results", date), "/", scenario, ".RDA")
+filename = paste0(here("results", date), "/", batch, ".RDA")
 save(results, file = filename)
 #}

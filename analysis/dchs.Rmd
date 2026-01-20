@@ -235,7 +235,8 @@ risks.overall <- OverallRiskSummaries(fit = fit.bkmr,
 ggplot(risks.overall[3:19,], aes(quantile, est, ymin = est - 1.96*sd, ymax = est + 1.96*sd)) +
   geom_pointrange() + 
   xlab("Joint exposure quantile") +
-  ylab("Estimate")
+  ylab("Estimate") +
+  theme_minimal()
 risks.overall
 
 # single-exposure risk
@@ -253,7 +254,8 @@ pred.resp.univar <- PredictorResponseUnivar(fit = fit.bkmr)
 ggplot(pred.resp.univar, aes(z, est, ymin = est - 1.96 * se, ymax = est + 1.96 * se)) +
   geom_smooth(stat = "identity") + 
   facet_wrap(~ variable) +
-  ylab("h(z)")
+  ylab("h(z)") +
+  theme_minimal()
 ```
 
 ### BWS

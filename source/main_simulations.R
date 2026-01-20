@@ -4,16 +4,15 @@ suppressPackageStartupMessages(library(gWQS))
 suppressPackageStartupMessages(library(here))
 suppressPackageStartupMessages(library(MASS))
 suppressPackageStartupMessages(library(qgcomp))
-suppressPackageStartupMessages(library(splines))
+suppressPackageStartupMessages(library(rstan))
 suppressPackageStartupMessages(library(tidyverse))
 
-wd = getwd()
+# Optional: avoid future warnings from gWQS nested parallelism
+suppressPackageStartupMessages(library(future))
+future::plan(future::sequential)
 
-if(substring(wd, 2, 6) == "Users"){
-  doLocal = TRUE
-}else{
-  doLocal = FALSE
-}
+wd <- getwd()
+doLocal <- substring(wd, 2, 6) == "Users"
 
 ###############################################################
 ## define or source functions used in code below
@@ -24,180 +23,282 @@ source(here("source", "extract_estimates.R"))
 ###############################################################
 ## set simulation design elements
 ###############################################################
-# params <- tibble(
-#   scenario = 1:21,
-#   n = 2000,
-#   p = 5,
-#   beta_X = rep(list(
-#     c(0, 0, 0, 0, 0),          # scenario 1
-#     c(0.25, 0, 0, 0, 0),          # scenario 2
-#     c(0.25/4, 0.25/4, 0.25/4, 0.25/4, 0), # scenario 3
-#     c(0.25, -0.15, 0, 0, 0),     # scenario 4
-#     c(0, 0, 0, 0, 0),        # scenario 5
-#     c(0.25, 0, 0, 0, 0),          # scenario 6
-#     c(0.25, 0.15, 0, 0, 0)         # scenario 7
-#   ), each = 3),
-#   beta_C = rep(c(0, 0, 0, 0, 0.25, 0, 0), each = 3),     # scenario 5 has confounding
-#   beta_X1X1 = rep(c(0, 0, 0, 0, 0, -0.15, 0), each = 3),  # scenario 6 has a nonlinear effect
-#   beta_X1X2 = rep(c(0, 0, 0, 0, 0, 0, -0.15), each = 3),  # scenario 7 has an interaction effect
-#   rho_X = rep(c(0, 0.4, 0.7), times = 7), 
-#   rho_C = rep(c(0, 0, 0, 0, 0.7, 0, 0), each = 3),     # scenario 5 has confounding,
-# )
+scenarios <- c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive")
+rho_levels <- c(0, 0.4, 0.7)
+sigma_levels <- c(0.5, 1.0, 2.0)
 
-params <- tibble(
-  batch = 1:140,
-  scenario = rep(c(2,5,8,11,14,17,20), each = 20),
-  n = 2000,
-  p = 5,
-  beta_X = rep(list(
-    c(0, 0, 0, 0, 0),          # scenario 1
-    c(0.25, 0, 0, 0, 0),          # scenario 2
-    c(0.25/4, 0.25/4, 0.25/4, 0.25/4, 0), # scenario 3
-    c(0.25, -0.15, 0, 0, 0),     # scenario 4
-    c(0, 0, 0, 0, 0),        # scenario 5
-    c(0.25, 0, 0, 0, 0),          # scenario 6
-    c(0.25, 0.15, 0, 0, 0)         # scenario 7
-  ), each = 20),
-  beta_C = rep(c(0, 0, 0, 0, 0.25, 0, 0), each = 20),     # scenario 5 has confounding
-  beta_X1X1 = rep(c(0, 0, 0, 0, 0, -0.15, 0), each = 20),  # scenario 6 has a nonlinear effect
-  beta_X1X2 = rep(c(0, 0, 0, 0, 0, 0, -0.15), each = 20),  # scenario 7 has an interaction effect
-  rho_X = rep(c(0.4), times = 140), 
-  rho_C = rep(c(0, 0, 0, 0, 0.7, 0, 0), each = 20),     # scenario 5 has confounding,
-)
+params <- tidyr::crossing(
+  scenario = scenarios,
+  rho_X = rho_levels,
+  sigma = sigma_levels,
+  n = 500,
+  p = 5
+) %>%
+  dplyr::mutate(batch = dplyr::row_number()) %>%
+  dplyr::select(batch, dplyr::everything())
 
 ###############################################################
 ## start simulation code
 ###############################################################
-nsim <- 5
-# define number of simulations and parameter scenarios
-if(doLocal) {
-  batch = 1
-  nsim = 1
-}else{
-  # defined from batch script params
-  batch <- as.numeric(commandArgs(trailingOnly=TRUE))
-}
+nsim <- 500
 
-# define simulation scenario
-#for (scenario in 11){
+if (doLocal) {
+  batch <- 28
+  nsim <- 2
+} else {
+  batch <- as.numeric(commandArgs(trailingOnly = TRUE))
+}
 
 param <- params[batch, ]
 
-# generate a random seed for each simulated dataset
-seed <- floor(runif(nsim, 1, 900))
-results = vector("list", length = nsim)
+# reproducible seeds per batch
+set.seed(10000 + batch)
+seed <- sample.int(1e8, nsim)
 
-# run simulations
-for(i in 1:nsim){
+results <- vector("list", length = nsim)
+Xnms <- paste0("X", 1:param$p)
+
+for (i in 1:nsim) {
   cat("batch:", batch, ", i:", i, "\n")
-  set.seed(seed[i])
   
   ####################
   # simulate data
-  simdata <- simulate_data(n = param$n,
-                           p = param$p,
-                         beta_X = param$beta_X[[1]],
-                         beta_C = param$beta_C,
-                         beta_X1X1 = param$beta_X1X1,
-                         beta_X1X2 = param$beta_X1X2,
-                         rho_X = param$rho_X,
-                         rho_C = param$rho_C)
+  simdata <- simulate_data(
+    n = param$n,
+    p = param$p,
+    scenario = param$scenario,
+    rho_X = param$rho_X,
+    sigma = param$sigma,
+    seed = seed[i]
+  )
   
   ####################
-  # WQS with a positive indice
+  # WQS with a positive index
   fit.wqs <- tryCatch(
     {
-      gwqs(y ~ wqs, mix_name = paste0("X", 1:5), data = simdata,
-           q = 4, validation = 0.6, b1_pos = TRUE, b = 100, rh = 100,
-           family = "gaussian")
+      gwqs(
+        y ~ wqs,
+        mix_name = Xnms,
+        data = simdata,
+        q = 4,
+        validation = 0.6,
+        b1_pos = TRUE,
+        b = 100,
+        rh = 100,
+        family = "gaussian"
+      )
     },
     error = function(e) {
-      message(paste("Simulation", i, "failed with error:", e$message))
+      message(paste("WQS failed (batch", batch, "sim", i, "):", e$message))
       return(NULL)
     }
   )
-  
   if (is.null(fit.wqs)) next
   
+  ####################
   # WQS with two indices
   fit.wqs2 <- tryCatch(
     {
-      gwqs(y ~ pwqs + nwqs, mix_name = paste0("X", 1:5), data = simdata, 
-           q = 4, validation = 0.6, b1_pos = TRUE, b = 100, rh = 100,
-           family = "gaussian")
+      gwqs(
+        y ~ pwqs + nwqs,
+        mix_name = Xnms,
+        data = simdata,
+        q = 4,
+        validation = 0.6,
+        b1_pos = TRUE,
+        b = 100,
+        rh = 100,
+        family = "gaussian"
+      )
     },
     error = function(e) {
-      message(paste("Simulation", i, "failed with error:", e$message))
+      message(paste("WQS2 failed (batch", batch, "sim", i, "):", e$message))
       return(NULL)
     }
   )
-  
   if (is.null(fit.wqs2)) next
   
-  # qgcomp.noboot
-  fit.qgcomp <- qgcomp.glm.noboot(y ~ ., dat = simdata, 
-                                  family = gaussian(), q = 4, bayes = TRUE)
-  
-  
-  # qgcomp.boot
-  if (param$beta_X1X1 != 0){
-    fit.qgcomp.boot <- qgcomp.glm.boot(y ~ bs(X1) + X2 + X3 + X4 + X5, dat = simdata, 
-                                       expnms = paste0("X", 1:5),
-                                       family = gaussian(), q = 4, B = 200, degree = 2)
-  } else if (param$beta_X1X2 != 0){
-    fit.qgcomp.boot <- qgcomp.glm.boot(y ~ bs(X1) * bs(X2) + X3 + X4 + X5, dat = simdata, 
-                                       expnms = paste0("X", 1:5),
-                                       family = gaussian(), q = 4, B = 200, degree = 2)
-  }
-  
-  # BKMR
-  fit.bkmr <- kmbayes(y = simdata$y, Z = simdata[, -1], 
-                      family = "gaussian", iter = 2000, verbose = FALSE, varsel = TRUE)
-  
-  # BWS
-  fit.bws <- bws(iter = 2000, y = simdata$y, X = simdata[, -1], family = "gaussian")
+  ####################
+  # qgcomp baseline (linear)
+  fit.qgcomp <- tryCatch(
+    {
+      qgcomp.glm.noboot(
+        y ~ .,
+        dat = simdata,
+        family = gaussian(),
+        q = 4,
+        bayes = TRUE
+      )
+    },
+    error = function(e) {
+      message(paste("qgcomp.noboot failed (batch", batch, "sim", i, "):", e$message))
+      return(NULL)
+    }
+  )
+  if (is.null(fit.qgcomp)) next
   
   ####################
-  # extract mixture effect and individual weights estimates
-  res.wqs <- extract_estimates(model = fit.wqs, method = "WQS")
-  res.wqs2 <- extract_estimates(model = fit.wqs2, method = "WQS2")
-  res.qgcomp <- extract_estimates(model = fit.qgcomp, method = "qgcomp.noboot")
-  if (param$beta_X1X1 != 0 | param$beta_X1X2 != 0){
-    res.qgcomp.boot <- extract_estimates(model = fit.qgcomp.boot, method = "qgcomp.boot")
+  # qgcomp extended (practice-style)
+  fit.qgcomp.ext <- NULL
+  if (param$scenario %in% c("nonlinear", "interactive")) {
+    
+    quad_terms <- paste0("I(", Xnms, "^2)", collapse = " + ")
+    
+    if (param$scenario == "nonlinear") {
+      f_ext <- stats::as.formula(
+        paste0("y ~ ", paste(Xnms, collapse = " + "), " + ", quad_terms)
+      )
+    } else {
+      f_ext <- stats::as.formula(
+        paste0("y ~ (", paste(Xnms, collapse = " + "), ")^2 + ", quad_terms)
+      )
+    }
+    
+    fit.qgcomp.ext <- tryCatch(
+      {
+        qgcomp.glm.boot(
+          f_ext,
+          dat = simdata,
+          expnms = Xnms,
+          family = gaussian(),
+          q = 4,
+          B = 200
+        )
+      },
+      error = function(e) {
+        message(paste("qgcomp.boot failed (batch", batch, "sim", i, "):", e$message))
+        return(NULL)
+      }
+    )
   }
-  res.bkmr <- extract_estimates(model = fit.bkmr, method = "BKMR")
-  res.bws <- extract_estimates(model = fit.bws, method = "BWS")
   
-  if (param$beta_X1X1 != 0 | param$beta_X1X2 != 0){
-    df_coef <- bind_rows(res.wqs[[1]], res.wqs2[[1]], res.qgcomp[[1]], res.qgcomp.boot[[1]], res.bws[[1]]) %>%
-      bind_cols(param, seed = seed[i])
-    df_coef$AIC_qgcomp = AIC(fit.qgcomp)
-    df_coef$AIC_qgcomp_boot = AIC(fit.qgcomp.boot)
-  } else {
-    df_coef <- bind_rows(res.wqs[[1]], res.wqs2[[1]], res.qgcomp[[1]], res.bws[[1]]) %>%
-      bind_cols(param, seed = seed[i])
+  ####################
+  # BKMR
+  fit.bkmr <- tryCatch(
+    {
+      kmbayes(
+        y = simdata$y,
+        Z = simdata[, -1],
+        family = "gaussian",
+        iter = 10000,
+        verbose = FALSE,
+        varsel = TRUE
+      )
+    },
+    error = function(e) {
+      message(paste("BKMR failed (batch", batch, "sim", i, "):", e$message))
+      return(NULL)
+    }
+  )
+  if (is.null(fit.bkmr)) next
+  
+  ####################
+  # BWS
+  fit.bws <- tryCatch(
+    {
+      bws::bws(
+        iter = 2000,                 # use 2000 to keep runtime sane; change if you want
+        y = simdata$y,
+        X = simdata[, -1],
+        family = "gaussian",
+        refresh = 0                 # suppress Stan progress printing
+      )
+    },
+    error = function(e) {
+      message(paste("BWS failed (batch", batch, "sim", i, "):", e$message))
+      return(NULL)
+    }
+  )
+  if (is.null(fit.bws)) next
+  
+  ####################
+  # extract estimates
+  res.wqs   <- extract_estimates(model = fit.wqs, method = "WQS")
+  res.wqs2  <- extract_estimates(model = fit.wqs2, method = "WQS2")
+  res.qg    <- extract_estimates(model = fit.qgcomp, method = "qgcomp.noboot")
+  res.bkmr  <- extract_estimates(model = fit.bkmr, method = "BKMR", simdata = simdata)
+  res.bws   <- extract_estimates(model = fit.bws, method = "BWS")
+  
+  res.qgext <- NULL
+  if (!is.null(fit.qgcomp.ext)) {
+    res.qgext <- extract_estimates(model = fit.qgcomp.ext, method = "qgcomp.boot")
   }
-  #rownames(df_coef) <- NULL
-  df_weights <- bind_rows(res.wqs[[2]], res.wqs2[[2]], res.qgcomp[[2]], res.bkmr[[2]], res.bws[[2]]) %>%
-    bind_cols(param, seed = seed[i])
+  
+  ####################
+  # coefficients
+  df_coef <- dplyr::bind_rows(
+    res.wqs[[1]],
+    res.wqs2[[1]],
+    res.qg[[1]],
+    if (!is.null(res.qgext)) res.qgext[[1]],
+    res.bws[[1]]
+  ) %>%
+    dplyr::mutate(
+      batch = param$batch,
+      scenario = param$scenario,
+      n = param$n,
+      p = param$p,
+      rho_X = param$rho_X,
+      sigma = param$sigma,
+      seed = seed[i]
+    )
+  
+  # attach BWS diagnostics to all rows (handy for filtering later)
+  bws_diag <- attr(fit.bws, "bws_diag")
+  if (!is.null(bws_diag)) {
+    df_coef$bws_rhat_max <- bws_diag$rhat_max
+    df_coef$bws_ess_min  <- bws_diag$ess_min
+    df_coef$bws_refit    <- bws_diag$refit
+    df_coef$bws_ok       <- bws_diag$ok
+  }
+  
+  # store AIC comparison if extended qgcomp exists
+  if (!is.null(fit.qgcomp.ext)) {
+    df_coef$AIC_qgcomp     <- suppressWarnings(AIC(fit.qgcomp))
+    df_coef$AIC_qgcomp_ext <- suppressWarnings(AIC(fit.qgcomp.ext))
+  }
+  
+  ####################
+  # weights/PIPs
+  df_weights <- dplyr::bind_rows(
+    res.wqs[[2]],
+    res.wqs2[[2]],
+    res.qg[[2]],
+    res.bkmr[[2]],
+    res.bws[[2]]
+  ) %>%
+    dplyr::mutate(
+      batch = param$batch,
+      scenario = param$scenario,
+      n = param$n,
+      p = param$p,
+      rho_X = param$rho_X,
+      sigma = param$sigma,
+      seed = seed[i]
+    )
   rownames(df_weights) <- NULL
-  df_bkmr <- res.bkmr[[1]]  %>%
-    bind_cols(param, seed = seed[i])
+  
+  ####################
+  # BKMR overall risk summaries
+  df_bkmr <- res.bkmr[[1]] %>%
+    dplyr::mutate(
+      batch = param$batch,
+      scenario = param$scenario,
+      n = param$n,
+      p = param$p,
+      rho_X = param$rho_X,
+      sigma = param$sigma,
+      seed = seed[i]
+    )
   rownames(df_bkmr) <- NULL
   
-  ####################
-  # store results
-  res <- list(coef = df_coef, weights = df_weights, bkmr = df_bkmr)
-  
-  results[[i]] = res
-
-} # end for loop
+  results[[i]] <- list(coef = df_coef, weights = df_weights, bkmr = df_bkmr)
+}
 
 ####################
 # save results
-date = gsub("-", "", Sys.Date())
-dir.create(file.path(here("results"), date), showWarnings = FALSE)
+date <- gsub("-", "", Sys.Date())
+dir.create(file.path(here("results"), date), showWarnings = FALSE, recursive = TRUE)
 
-filename = paste0(here("results", date), "/", batch, ".RDA")
+filename <- file.path(here("results", date), paste0(batch, ".RDA"))
 save(results, file = filename)
-#}

@@ -2,33 +2,88 @@
 ## function to simulate data
 ###############################################################
 simulate_data <- function(
-    n = 500,                      # sample size
-    p = 5,                        # number of exposures
-    beta_0 = 0,                   # model intercept
-    beta_X = c(0, 0, 0, 0, 0),    # beta coefficients for X
-    beta_X1X1 = 0,                # beta coefficient for the X1X2 interaction
-    beta_X1X2 = 0,                # beta coefficient for the X1X2 interaction
-    beta_C = 0,                   # beta coefficient for the unmeasured confounder (C)
-    rho_X = 0,                    # pairwise correlation between X's
-    rho_C = 0.7                # correlation between X1 and C
-){
+    n = 500,
+    p = 5,
+    scenario = c("null", "single", "homogeneous", "heterogeneous",
+                 "nonlinear", "interactive"),
+    rho_X = 0,
+    sigma = 1,
+    seed = NULL
+) {
   
-    p2 <- length(beta_X) # number of true predictors
-
-    # Simulate X
-    Sigma <- matrix(rho_X, nrow = p, ncol = p)
-    diag(Sigma) <- 1
+  if (!is.null(seed)) set.seed(seed)
+  scenario <- match.arg(scenario)
+  
+  ## ---------------------------
+  ## 1. Simulate exposures
+  ## ---------------------------
+  Sigma <- matrix(rho_X, nrow = p, ncol = p)
+  diag(Sigma) <- 1
+  
+  X <- MASS::mvrnorm(n, mu = rep(0, p), Sigma = Sigma)
+  colnames(X) <- paste0("X", 1:p)
+  
+  q <- qnorm(0.75)  # 75th percentile
+  
+  ## ---------------------------
+  ## 2. Generate outcome
+  ## ---------------------------
+  y <- numeric(n)
+  
+  if (scenario == "null") {
     
-    X <- mvrnorm(n, mu = rep(0, p), Sigma = Sigma)
-    colnames(X) = paste0("X", 1:p)
+    y <- rnorm(n, 0, sigma)
     
-    # Simulate the unmeasured confounder C
-    C <- (rho_C * X[, 1]) + sqrt(1 - rho_C * rho_C) * rnorm(n)
+  }
+  
+  if (scenario == "single") {
     
-    # Simulate outcome
-    y <- beta_0 + X[, 1:p2] %*% beta_X + X[, 1]^2 * beta_X1X1 + (X[, 1] * X[, 2]) * beta_X1X2 + C * beta_C + rnorm(n)
+    # One active exposure, effect size = 0.25
+    beta <- c(0.25, rep(0, p - 1))
+    y <- X %*% beta + rnorm(n, 0, sigma)
     
-    res <- data.frame(y = y, 
-                      X)
-  return(res)
+  }
+  
+  if (scenario == "homogeneous") {
+    
+    # Four equal positive effects summing to 0.25
+    beta <- c(rep(0.0625, 4), rep(0, p - 4))
+    y <- X %*% beta + rnorm(n, 0, sigma)
+    
+  }
+  
+  if (scenario == "heterogeneous") {
+    
+    # Mixed directions, net effect = 0.10
+    beta <- c(0.25, -0.15, rep(0, p - 2))
+    y <- X %*% beta + rnorm(n, 0, sigma)
+    
+  }
+  
+  if (scenario == "nonlinear") {
+    
+    # Smooth additive nonlinearity (not tailored to any method)
+    y <- 0.35 * X[, 1] -
+      0.15 * X[, 1]^2 +
+      0.20 * sin(pi * X[, 2]) +
+      rnorm(n, 0, sigma)
+  }
+  
+  if (scenario == "interactive") {
+    
+    # Strong threshold-based interaction
+    I1 <- as.numeric(X[, 1] > q)
+    I2 <- as.numeric(X[, 2] > q)
+    
+    y <- 0.25 * I1 +
+      0.15 * I2 -
+      0.15 * I1 * I2 +
+      rnorm(n, 0, sigma)
+  }
+  
+  ## ---------------------------
+  ## 3. Return data
+  ## ---------------------------
+  data.frame(y = y, X)
 }
+

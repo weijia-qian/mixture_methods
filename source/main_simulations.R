@@ -5,6 +5,7 @@ suppressPackageStartupMessages(library(here))
 suppressPackageStartupMessages(library(MASS))
 suppressPackageStartupMessages(library(qgcomp))
 suppressPackageStartupMessages(library(rstan))
+suppressPackageStartupMessages(library(tictoc))
 suppressPackageStartupMessages(library(tidyverse))
 
 # Optional: avoid future warnings from gWQS nested parallelism
@@ -40,11 +41,11 @@ params <- tidyr::crossing(
 ###############################################################
 ## start simulation code
 ###############################################################
-nsim <- 500
+nsim <- 80
 
 if (doLocal) {
-  batch <- 28
-  nsim <- 2
+  batch <- 54
+  nsim <- 1
 } else {
   batch <- as.numeric(commandArgs(trailingOnly = TRUE))
 }
@@ -56,11 +57,12 @@ set.seed(10000 + batch)
 seed <- sample.int(1e8, nsim)
 
 results <- vector("list", length = nsim)
+time <- vector("numeric", length = nsim)
 Xnms <- paste0("X", 1:param$p)
 
 for (i in 1:nsim) {
   cat("batch:", batch, ", i:", i, "\n")
-  
+  tic()
   ####################
   # simulate data
   simdata <- simulate_data(
@@ -293,6 +295,8 @@ for (i in 1:nsim) {
   rownames(df_bkmr) <- NULL
   
   results[[i]] <- list(coef = df_coef, weights = df_weights, bkmr = df_bkmr)
+  time_stamp <- toc(quiet = TRUE)
+  time[i] <- time_stamp$toc - time_stamp$tic
 }
 
 ####################
@@ -300,5 +304,5 @@ for (i in 1:nsim) {
 date <- gsub("-", "", Sys.Date())
 dir.create(file.path(here("results"), date), showWarnings = FALSE, recursive = TRUE)
 
-filename <- file.path(here("results", date), paste0(batch, ".RDA"))
+filename <- file.path(here("results", date), paste0(batch, "_batch_1.RDA"))
 save(results, file = filename)

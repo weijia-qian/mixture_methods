@@ -180,7 +180,7 @@ for (i in 1:nsim) {
         y = simdata$y,
         Z = simdata[, -1],
         family = "gaussian",
-        iter = 10000,
+        iter = 8000,
         verbose = FALSE,
         varsel = TRUE
       )
@@ -197,7 +197,7 @@ for (i in 1:nsim) {
   fit.bws <- tryCatch(
     {
       bws::bws(
-        iter = 2000,                 # use 2000 to keep runtime sane; change if you want
+        iter = 8000,                 # use 2000 to keep runtime sane; change if you want
         y = simdata$y,
         X = simdata[, -1],
         family = "gaussian",

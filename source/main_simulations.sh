@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --array=1-54%54
-#SBATCH --job-name=simulations_5
+#SBATCH --job-name=simulations_6
 #SBATCH --partition=week-long-cpu
-#SBATCH --output=main_simulations_5.out
-#SBATCH --error=main_simulations_5.err
+#SBATCH --output=main_simulations_6.out
+#SBATCH --error=main_simulations_6.err
 
 module purge
 module load R/4.4.0

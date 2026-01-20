@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --array=1-54%54
-#SBATCH --job-name=simulations_2
+#SBATCH --job-name=simulations_3
 #SBATCH --partition=wrobel
-#SBATCH --output=main_simulations_2.out
-#SBATCH --error=main_simulations_2.err
+#SBATCH --output=main_simulations_3.out
+#SBATCH --error=main_simulations_3.err
 
 module purge
 module load R/4.4.0

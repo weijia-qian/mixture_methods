@@ -24,27 +24,35 @@ source(here("source", "extract_estimates.R"))
 ###############################################################
 ## set simulation design elements
 ###############################################################
-scenarios <- c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive")
+scenarios <- c("nonlinear", "interactive")
 rho_levels <- c(0, 0.4, 0.7)
-sigma_levels <- c(0.5, 1.0, 2.0)
+sigma_levels <- c(1.0)
 
 params <- tidyr::crossing(
   scenario = scenarios,
   rho_X = rho_levels,
   sigma = sigma_levels,
   n = 500,
-  p = 5
+  p = 10
 ) %>%
   dplyr::mutate(batch = dplyr::row_number()) %>%
   dplyr::select(batch, dplyr::everything())
 
+pick_top_exposures <- function(dat, Xnms, K = 4) {
+  # simple, common screening: absolute correlation with outcome
+  # (fast + works even when qgcomp weights are unstable)
+  cors <- sapply(Xnms, function(x) suppressWarnings(cor(dat[[x]], dat$y)))
+  cors[is.na(cors)] <- 0
+  names(sort(abs(cors), decreasing = TRUE))[seq_len(min(K, length(Xnms)))]
+}
+
 ###############################################################
 ## start simulation code
 ###############################################################
-nsim <- 100
+nsim <- 50
 
 if (doLocal) {
-  batch <- 54
+  batch <- 1
   nsim <- 1
 } else {
   batch <- as.numeric(commandArgs(trailingOnly = TRUE))
@@ -141,18 +149,30 @@ for (i in 1:nsim) {
   
   ####################
   # qgcomp extended (practice-style)
+  # - quadratic terms for ALL exposures
+  # - for interactive scenario: interactions among TOP K exposures (screened)
   fit.qgcomp.ext <- NULL
   if (param$scenario %in% c("nonlinear", "interactive")) {
     
+    Xnms <- paste0("X", 1:param$p)
     quad_terms <- paste0("I(", Xnms, "^2)", collapse = " + ")
     
     if (param$scenario == "nonlinear") {
+      
       f_ext <- stats::as.formula(
         paste0("y ~ ", paste(Xnms, collapse = " + "), " + ", quad_terms)
       )
+      
     } else {
+      # interactive: choose top K exposures then include only their pairwise interactions
+      topK <- pick_top_exposures(simdata, Xnms, K = 4)
+      int_terms <- paste0("(", paste(topK, collapse = " + "), ")^2")
+      
+      # include full linear terms for all X + quadratics for all X + limited interactions among topK
       f_ext <- stats::as.formula(
-        paste0("y ~ (", paste(Xnms, collapse = " + "), ")^2 + ", quad_terms)
+        paste0("y ~ ", paste(Xnms, collapse = " + "),
+               " + ", quad_terms,
+               " + ", int_terms)
       )
     }
     
@@ -164,7 +184,7 @@ for (i in 1:nsim) {
           expnms = Xnms,
           family = gaussian(),
           q = 4,
-          B = 200
+          B = 100
         )
       },
       error = function(e) {
@@ -182,7 +202,7 @@ for (i in 1:nsim) {
         y = simdata$y,
         Z = simdata[, -1],
         family = "gaussian",
-        iter = 8000,
+        iter = 2000,
         verbose = FALSE,
         varsel = TRUE
       )
@@ -199,7 +219,7 @@ for (i in 1:nsim) {
   fit.bws <- tryCatch(
     {
       bws::bws(
-        iter = 8000,                 # use 2000 to keep runtime sane; change if you want
+        iter = 2000,                 # use 2000 to keep runtime sane; change if you want
         y = simdata$y,
         X = simdata[, -1],
         family = "gaussian",
@@ -301,8 +321,8 @@ for (i in 1:nsim) {
 
 ####################
 # save results
-date <- gsub("-", "", Sys.Date())
-dir.create(file.path(here("results"), date), showWarnings = FALSE, recursive = TRUE)
+# date <- gsub("-", "", Sys.Date())
+dir.create(file.path(here("results"), k10), showWarnings = FALSE, recursive = TRUE)
 
-filename <- file.path(here("results", date), paste0(batch, "_p10.RDA"))
+filename <- file.path(here("results", k10), paste0(batch, "_k10_batch1.RDA"))
 save(results, file = filename)

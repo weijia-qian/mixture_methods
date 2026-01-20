@@ -324,5 +324,5 @@ for (i in 1:nsim) {
 # date <- gsub("-", "", Sys.Date())
 dir.create(file.path(here("results"), k10), showWarnings = FALSE, recursive = TRUE)
 
-filename <- file.path(here("results", k10), paste0(batch, "_k10_batch1.RDA"))
+filename <- file.path(here("results", k10), paste0(batch, "_k10_batch2.RDA"))
 save(results, file = filename)

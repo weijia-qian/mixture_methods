@@ -33,7 +33,7 @@ params <- tidyr::crossing(
   rho_X = rho_levels,
   sigma = sigma_levels,
   n = 500,
-  p = 10
+  p = 20
 ) %>%
   dplyr::mutate(batch = dplyr::row_number()) %>%
   dplyr::select(batch, dplyr::everything())
@@ -322,7 +322,7 @@ for (i in 1:nsim) {
 ####################
 # save results
 # date <- gsub("-", "", Sys.Date())
-dir.create(file.path(here("results"), k10), showWarnings = FALSE, recursive = TRUE)
+dir.create(file.path(here("results"), k20), showWarnings = FALSE, recursive = TRUE)
 
-filename <- file.path(here("results", k10), paste0(batch, "_k10_batch2.RDA"))
+filename <- file.path(here("results", k20), paste0(batch, "_k20_batch1.RDA"))
 save(results, file = filename)

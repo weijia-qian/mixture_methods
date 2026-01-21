@@ -25,8 +25,8 @@ source(here("source", "extract_estimates.R"))
 ## set simulation design elements
 ###############################################################
 scenarios <- c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive")
-rho_levels <- c(0, 0.4, 0.7)
-sigma_levels <- c(0.5, 1.0, 2.0)
+rho_levels <- c(0.4)
+sigma_levels <- c(1.0)
 
 params <- tidyr::crossing(
   scenario = scenarios,
@@ -41,10 +41,10 @@ params <- tidyr::crossing(
 ###############################################################
 ## start simulation code
 ###############################################################
-nsim <- 100
+nsim <- 25
 
 if (doLocal) {
-  batch <- 54
+  batch <- 1
   nsim <- 1
 } else {
   batch <- as.numeric(commandArgs(trailingOnly = TRUE))
@@ -182,7 +182,7 @@ for (i in 1:nsim) {
         y = simdata$y,
         Z = simdata[, -1],
         family = "gaussian",
-        iter = 8000,
+        iter = 2000,
         verbose = FALSE,
         varsel = TRUE
       )
@@ -199,7 +199,7 @@ for (i in 1:nsim) {
   fit.bws <- tryCatch(
     {
       bws::bws(
-        iter = 8000,                 # use 2000 to keep runtime sane; change if you want
+        iter = 2000,                 
         y = simdata$y,
         X = simdata[, -1],
         family = "gaussian",
@@ -301,8 +301,8 @@ for (i in 1:nsim) {
 
 ####################
 # save results
-date <- gsub("-", "", Sys.Date())
-dir.create(file.path(here("results"), date), showWarnings = FALSE, recursive = TRUE)
+# date <- gsub("-", "", Sys.Date())
+dir.create(file.path(here("results"), "n2000"), showWarnings = FALSE, recursive = TRUE)
 
-filename <- file.path(here("results", date), paste0(batch, ".RDA"))
+filename <- file.path(here("results", "n2000"), paste0(batch, "_n2000_batch1.RDA"))
 save(results, file = filename)

@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --array=1-6%6
 #SBATCH --job-name=n2000_3
-#SBATCH --partition=week-long-cpu
+#SBATCH --partition=chang
 #SBATCH --output=main_simulations_n2000_3.out
 #SBATCH --error=main_simulations_n2000_3.err
 

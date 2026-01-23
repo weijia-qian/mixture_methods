@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --array=1-54%54
-#SBATCH --job-name=simulations_7
-#SBATCH --partition=week-long-cpu
-#SBATCH --output=main_simulations_7.out
-#SBATCH --error=main_simulations_7.err
+#SBATCH --job-name=simulations_qgcomp
+#SBATCH --partition=wrobel
+#SBATCH --output=main_simulations_qgcomp.out
+#SBATCH --error=main_simulations_qgcomp.err
 
 module purge
 module load R/4.4.0

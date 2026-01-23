@@ -1,0 +1,265 @@
+---
+title: "Simulation Results Summary (N2000)"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(here))
+```
+
+## Load simulation outputs
+
+```{r}
+# TODO: update date folder
+folder_path <- here("results", "n2000")
+
+rda_files <- list.files(folder_path, pattern = "\\.RDA$", full.names = TRUE)
+length(rda_files)
+
+# Robust loader: guarantees we extract object named `results`
+all_results <- vector("list", length(rda_files))
+for (i in seq_along(rda_files)) {
+  e <- new.env()
+  load(rda_files[[i]], envir = e)
+  stopifnot(exists("results", envir = e))
+  all_results[[i]] <- get("results", envir = e)
+}
+```
+
+## Flatten outputs to tables
+
+```{r}
+all_coef <- list()
+all_weights <- list()
+all_bkmr <- list()
+
+for (batch_res in all_results) {
+  for (iter_res in batch_res) {
+    if (is.null(iter_res)) next
+    if (!is.null(iter_res$coef))    all_coef[[length(all_coef) + 1]] <- iter_res$coef
+    if (!is.null(iter_res$weights)) all_weights[[length(all_weights) + 1]] <- iter_res$weights
+    if (!is.null(iter_res$bkmr))    all_bkmr[[length(all_bkmr) + 1]] <- iter_res$bkmr
+  }
+}
+
+coef_df <- bind_rows(all_coef)
+weights_df <- bind_rows(all_weights)
+bkmr_df <- bind_rows(all_bkmr)
+
+glimpse(coef_df)
+glimpse(weights_df)
+glimpse(bkmr_df)
+```
+
+## Define the true joint-effect contrast Δ(75,50)
+
+We use a common, method-agnostic contrast:
+\[
+\Delta(75,50) = E[Y \mid X_1=\cdots=X_p=q_{0.75}] - E[Y \mid X_1=\cdots=X_p=q_{0.50}]
+\]
+where \(q_{0.50}=0\), \(q_{0.75}=\Phi^{-1}(0.75)\).
+
+```{r}
+true_joint_effect <- function(scenario, p = 5) {
+  q <- qnorm(0.75)
+  X75 <- rep(q, p)
+  X50 <- rep(0, p)
+
+  f <- function(X, scenario) {
+    if (scenario == "null") return(0)
+    if (scenario == "single") return(0.25 * X[1])
+    if (scenario == "homogeneous") return(sum(rep(0.0625, 4) * X[1:4]))
+    if (scenario == "heterogeneous") return(0.25 * X[1] - 0.15 * X[2])
+    if (scenario == "nonlinear") {
+      # MUST match simulate_data.R
+      return(0.35 * X[1] - 0.15 * X[1]^2 + 0.20 * sin(pi * X[2]))
+    }
+    if (scenario == "interactive") {
+      I1 <- as.numeric(X[1] >= q)
+      I2 <- as.numeric(X[2] >= q)
+      return(0.25 * I1 + 0.15 * I2 - 0.15 * I1 * I2)
+    }
+    stop("Unknown scenario")
+  }
+
+  f(X75, scenario) - f(X50, scenario)
+}
+
+truth_tbl <- expand_grid(
+  scenario = unique(coef_df$scenario),
+  p = unique(coef_df$p)
+) %>%
+  mutate(true_delta = map2_dbl(scenario, p, true_joint_effect))
+
+truth_tbl
+```
+
+## Construct method-specific estimated Δ(75,50)
+
+For most methods, we use their reported joint-effect parameter as the estimate of the contrast (consistent with your previous summaries). For BKMR, we use the OverallRiskSummaries at quantile = 0.75 (already relative to q.fixed=0.5).
+
+```{r}
+# Extract BKMR delta and CI
+bkmr_delta <- bkmr_df %>%
+  filter(abs(quantile - 0.75) < 1e-12) %>%
+  mutate(
+    method = "BKMR",
+    estimate = est,
+    lb = est - 1.96 * sd,
+    ub = est + 1.96 * sd
+  ) %>%
+  select(batch, scenario, n, p, rho_X, sigma, seed, method, estimate, lb, ub)
+
+# For coef-based methods, pick the primary mixture effect term:
+# - WQS: term should be "wqs"
+# - WQS2: evaluate pos and neg separately (optional); here we keep both and label by method already
+# - qgcomp.noboot: term is typically "psi1"
+# - BWS: term is "theta1"
+coef_delta <- coef_df %>%
+  filter(method %in% c("WQS", "WQS2: pos", "WQS2: neg", "qgcomp.noboot", "BWS")) %>%
+  select(batch, scenario, n, p, rho_X, sigma, seed, method, term, estimate, lb, ub)
+
+delta_df <- bind_rows(
+  bkmr_delta,
+  coef_delta %>% select(-term)
+) %>%
+  left_join(truth_tbl, by = c("scenario", "p")) %>%
+  mutate(
+    bias = estimate - true_delta,
+    sq_error = (estimate - true_delta)^2,
+    covered = ifelse(!is.na(lb) & !is.na(ub), (lb <= true_delta & true_delta <= ub), NA)
+  )
+
+# glimpse(delta_df)
+```
+
+## Type I error and power (by method, scenario, rho, sigma)
+
+We use CI inclusion logic:
+- Type I error: null scenario, reject if CI excludes 0.
+- Power: non-null scenarios, reject if CI excludes 0.
+
+```{r}
+delta_df <- delta_df %>%
+  mutate(
+    reject0 = (lb > 0 | ub < 0)
+  )
+
+type1_tbl <- delta_df %>%
+  filter(scenario == "null") %>%
+  group_by(method, rho_X, sigma) %>%
+  summarise(
+    type1 = mean(reject0, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+power_tbl <- delta_df %>%
+  filter(scenario != "null") %>%
+  group_by(method, scenario, rho_X, sigma) %>%
+  summarise(
+    power = mean(reject0, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+type1_tbl
+power_tbl
+```
+
+## Bias, RMSE, and 95% coverage
+
+```{r}
+perf_tbl <- delta_df %>%
+  filter(scenario != "null") %>%
+  group_by(method, scenario, rho_X, sigma) %>%
+  summarise(
+    bias = mean(bias, na.rm = TRUE),
+    rmse = sqrt(mean(sq_error, na.rm = TRUE)),
+    coverage = mean(covered, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+perf_tbl
+```
+
+## Weight sensitivity/specificity
+
+We normalize qgcomp directional weights within each replicate so selection thresholds are meaningful.
+
+Assume the “true active” set by scenario:
+- single: X1
+- homogeneous: X1–X4
+- heterogeneous: X1 and X2 (both active; sign ignored for selection)
+- nonlinear: X1 and X2
+- interactive: X1 and X2
+
+```{r}
+true_active <- function(scenario) {
+  if (scenario == "single") return(c("X1"))
+  if (scenario == "homogeneous") return(paste0("X", 1:4))
+  if (scenario == "heterogeneous") return(c("X1", "X2"))
+  if (scenario == "nonlinear") return(c("X1", "X2"))
+  if (scenario == "interactive") return(c("X1", "X2"))
+  if (scenario == "null") return(character(0))
+  stop("Unknown scenario")
+}
+
+# normalize weights for qgcomp to sum abs=1 per replicate-method
+weights_norm <- weights_df %>%
+  group_by(batch, seed, method) %>%
+  mutate(
+    abs_sum = sum(abs(estimate), na.rm = TRUE),
+    estimate_norm = ifelse(method == "qgcomp.noboot" & abs_sum > 0,
+                           abs(estimate) / abs_sum,
+                           estimate)
+  ) %>%
+  ungroup()
+
+# selection rule:
+# - For WQS/BWS (weights sum to 1): select if weight > 1/p
+# - For qgcomp.noboot: select if normalized abs(weight) > 1/p
+# - For BKMR PIP: select if PIP > 0.5 (conservative)
+weights_sel <- weights_norm %>%
+  mutate(
+    thresh = case_when(
+      method == "BKMR" ~ 0.5,
+      method == "qgcomp.noboot" ~ 1 / p,
+      TRUE ~ 1 / p
+    ),
+    selected = case_when(
+      method == "BKMR" ~ (estimate > thresh),
+      method == "qgcomp.noboot" ~ (estimate_norm > thresh),
+      TRUE ~ (estimate > thresh)
+    )
+  )
+
+sens_spec <- weights_sel %>%
+  filter(scenario != "null") %>%
+  group_by(method, scenario, rho_X, sigma, batch, seed) %>%
+  summarise(
+    active = list(true_active(first(scenario))),
+    sens = {
+      a <- active[[1]]
+      if (length(a) == 0) NA_real_ else mean(selected[mix_name %in% a], na.rm = TRUE)
+    },
+    spec = {
+      a <- active[[1]]
+      inact <- setdiff(unique(mix_name), a)
+      if (length(inact) == 0) NA_real_ else mean(!selected[mix_name %in% inact], na.rm = TRUE)
+    },
+    .groups = "drop"
+  ) %>%
+  group_by(method, scenario, rho_X, sigma) %>%
+  summarise(
+    sensitivity = mean(sens, na.rm = TRUE),
+    specificity = mean(spec, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+sens_spec
+```

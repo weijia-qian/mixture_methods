@@ -69,7 +69,7 @@ extract_estimates <- function(model, method, simdata = NULL) {
     
   } else if (method == "qgcomp.noboot") {
     
-    # qgcomp mixture effect (psi1)
+    # mixture effect (psi1)
     coef_all <- coef(model)
     term <- names(coef_all)[2]
     est <- unname(coef_all[2])
@@ -86,15 +86,18 @@ extract_estimates <- function(model, method, simdata = NULL) {
       ub = ub
     )
     
-    # directional weights (common practice): pos.weights, neg.weights
-    # Return signed weights so selection can use abs(weights) after normalization.
-    pos_names <- names(model$pos.weights)
-    neg_names <- names(model$neg.weights)
+    # "weights" (signed contribution proxy)
+    # NOTE: qgcomp weights are typically interpreted as directional contributions.
+    pos_weights_names <- names(model$pos.weights)
+    pos_weights <- model$pos.weights * model$pos.psi / (model$pos.size + model$neg.size)
+    
+    neg_weights_names <- names(model$neg.weights)
+    neg_weights <- model$neg.weights * model$neg.psi / (model$pos.size + model$neg.size)
     
     tmp_weights <- data.frame(
       method = method,
-      mix_name = c(pos_names, neg_names),
-      estimate = c(unname(model$pos.weights), -unname(model$neg.weights)),
+      mix_name = c(pos_weights_names, neg_weights_names),
+      estimate = c(pos_weights, neg_weights),
       lb = NA_real_,
       ub = NA_real_
     )

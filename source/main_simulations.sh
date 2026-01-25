@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --array=1-54%54
-#SBATCH --job-name=wqs2_qg_1
+#SBATCH --job-name=wqs2_qg_2
 #SBATCH --partition=wrobel
-#SBATCH --output=wqs2_qg_1.out
-#SBATCH --error=wqs2_qg_1.err
+#SBATCH --output=wqs2_qg_2.out
+#SBATCH --error=wqs2_qg_2.err
 
 module purge
 module load R/4.4.0

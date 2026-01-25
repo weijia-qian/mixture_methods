@@ -48,6 +48,20 @@ extract_estimates <- function(model, method, simdata = NULL) {
       ub = ub
     )
     
+    V <- vcov(model)
+    se_delta <- sqrt(V["pwqs","pwqs"] + V["nwqs","nwqs"] + 2*V["pwqs","nwqs"])
+    
+    tmp_delta <- data.frame(
+      method = "2iWQS",
+      term = "delta",
+      estimate = sum(est),
+      lb = sum(est) - qnorm(0.975)*se_delta,
+      ub = sum(est) + qnorm(0.975)*se_delta
+    )
+    
+    tmp_coef <- tmp_coef %>%
+      bind_rows(tmp_delta)
+    
     tmp_weights <- rbind(
       data.frame(
         method = "WQS2: pos",
@@ -110,6 +124,9 @@ extract_estimates <- function(model, method, simdata = NULL) {
     coef_all <- coef(model)
     ci <- suppressWarnings(confint(model))
     
+    bs <- as.data.frame(model$bootsamps)
+    delta_bs <- colSums(bs[-1,])
+    
     tmp_coef <- data.frame(
       method = method,
       term = names(coef_all),
@@ -117,6 +134,17 @@ extract_estimates <- function(model, method, simdata = NULL) {
       lb = unname(ci[, 1]),
       ub = unname(ci[, 2])
     )
+    
+    tmp_delta <- data.frame(
+      method = method,
+      term = "delta",
+      estimate = unname(mean(delta_bs)),
+      lb = unname(quantile(delta_bs, probs = 0.025, na.rm = TRUE)),
+      ub = unname(quantile(delta_bs, probs = 0.975, na.rm = TRUE))
+    )
+    
+    tmp_coef <- tmp_coef %>%
+      bind_rows(tmp_delta)
     
     tmp_weights <- data.frame(
       method = method,

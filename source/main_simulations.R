@@ -41,11 +41,11 @@ params <- tidyr::crossing(
 ###############################################################
 ## start simulation code
 ###############################################################
-nsim <- 500
+nsim <- 100
 
 if (doLocal) {
-  batch <- 46
-  nsim <- 1
+  batch <- 20
+  nsim <- 2
 } else {
   batch <- as.numeric(commandArgs(trailingOnly = TRUE))
 }
@@ -99,26 +99,26 @@ for (i in 1:nsim) {
   
   ####################
   # WQS with two indices
-  # fit.wqs2 <- tryCatch(
-  #   {
-  #     gwqs(
-  #       y ~ pwqs + nwqs,
-  #       mix_name = Xnms,
-  #       data = simdata,
-  #       q = 4,
-  #       validation = 0.6,
-  #       b1_pos = TRUE,
-  #       b = 100,
-  #       rh = 100,
-  #       family = "gaussian"
-  #     )
-  #   },
-  #   error = function(e) {
-  #     message(paste("WQS2 failed (batch", batch, "sim", i, "):", e$message))
-  #     return(NULL)
-  #   }
-  # )
-  # if (is.null(fit.wqs2)) next
+  fit.wqs2 <- tryCatch(
+    {
+      gwqs(
+        y ~ pwqs + nwqs,
+        mix_name = Xnms,
+        data = simdata,
+        q = 4,
+        validation = 0.6,
+        b1_pos = TRUE,
+        b = 100,
+        rh = 100,
+        family = "gaussian"
+      )
+    },
+    error = function(e) {
+      message(paste("WQS2 failed (batch", batch, "sim", i, "):", e$message))
+      return(NULL)
+    }
+  )
+  if (is.null(fit.wqs2)) next
   
   ####################
   # qgcomp baseline (linear)
@@ -165,7 +165,7 @@ for (i in 1:nsim) {
           family = gaussian(),
           q = 4,
           degree = 2,
-          B = 200
+          B = 500
         )
       },
       error = function(e) {
@@ -217,7 +217,7 @@ for (i in 1:nsim) {
   ####################
   # extract estimates
   # res.wqs   <- extract_estimates(model = fit.wqs, method = "WQS")
-  # res.wqs2  <- extract_estimates(model = fit.wqs2, method = "WQS2")
+  res.wqs2  <- extract_estimates(model = fit.wqs2, method = "WQS2")
   res.qg    <- extract_estimates(model = fit.qgcomp, method = "qgcomp.noboot")
   # res.bkmr  <- extract_estimates(model = fit.bkmr, method = "BKMR", simdata = simdata)
   # res.bws   <- extract_estimates(model = fit.bws, method = "BWS")
@@ -231,7 +231,7 @@ for (i in 1:nsim) {
   # coefficients
   df_coef <- dplyr::bind_rows(
     # res.wqs[[1]],
-    # res.wqs2[[1]],
+    res.wqs2[[1]],
     res.qg[[1]],
     if (!is.null(res.qgext)) res.qgext[[1]]
     # res.bws[[1]]
@@ -265,7 +265,7 @@ for (i in 1:nsim) {
   # weights/PIPs
   df_weights <- dplyr::bind_rows(
     # res.wqs[[2]],
-    # res.wqs2[[2]],
+    res.wqs2[[2]],
     res.qg[[2]]
     # res.bkmr[[2]],
     # res.bws[[2]]
@@ -303,8 +303,9 @@ for (i in 1:nsim) {
 
 ####################
 # save results
-date <- gsub("-", "", Sys.Date())
-dir.create(file.path(here("results"), date), showWarnings = FALSE, recursive = TRUE)
+# date <- gsub("-", "", Sys.Date())
+# dir.create(file.path(here("results"), date), showWarnings = FALSE, recursive = TRUE)
+dir.create(file.path(here("results"), "wqs2_qg"), showWarnings = FALSE, recursive = TRUE)
 
-filename <- file.path(here("results", date), paste0(batch, ".RDA"))
+filename <- file.path(here("results", "wqs2_qg"), paste0(batch, "_wqs2_qg_batch1.RDA"))
 save(results, file = filename)

@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --array=1-54%54
-#SBATCH --job-name=wqs2_qg_4
+#SBATCH --job-name=wqs2_qg_5
 #SBATCH --partition=week-long-cpu
-#SBATCH --output=wqs2_qg_4.out
-#SBATCH --error=wqs2_qg_4.err
+#SBATCH --output=wqs2_qg_5.out
+#SBATCH --error=wqs2_qg_5.err
 
 module purge
 module load R/4.4.0

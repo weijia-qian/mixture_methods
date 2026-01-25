@@ -307,5 +307,5 @@ for (i in 1:nsim) {
 # dir.create(file.path(here("results"), date), showWarnings = FALSE, recursive = TRUE)
 dir.create(file.path(here("results"), "wqs2_qg"), showWarnings = FALSE, recursive = TRUE)
 
-filename <- file.path(here("results", "wqs2_qg"), paste0(batch, "_wqs2_qg_batch4.RDA"))
+filename <- file.path(here("results", "wqs2_qg"), paste0(batch, "_wqs2_qg_batch5.RDA"))
 save(results, file = filename)

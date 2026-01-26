@@ -282,25 +282,123 @@ df_type1 <- coef_df %>%
   group_by(method, scenario, rho_X, sigma) %>%
   summarise(type1 = round(mean(reject0, na.rm = TRUE),2))
 df_type1
+
+# --- Wilson CI helper (no extra packages needed) ---
+wilson_ci <- function(x, n, conf = 0.95) {
+  if (n == 0) return(c(NA_real_, NA_real_))
+  z <- qnorm(1 - (1 - conf) / 2)
+  phat <- x / n
+  denom <- 1 + z^2 / n
+  center <- (phat + z^2 / (2 * n)) / denom
+  half <- z * sqrt(phat * (1 - phat) / n + z^2 / (4 * n^2)) / denom
+  c(lower = max(0, center - half), upper = min(1, center + half))
+}
+
+# --- Build Type I error table with Wilson CI ---
+df_type1_wide <- coef_df %>%
+  filter(scenario == "null", method != "qgcomp nonlinear") %>%
+  mutate(
+    reject0 = (lb > 0 | ub < 0)  # reject H0: effect=0 if CI excludes 0
+  ) %>%
+  group_by(rho_X, sigma, method) %>%
+  summarise(
+    x = sum(reject0, na.rm = TRUE),
+    n = sum(!is.na(reject0)),
+    type1 = x / n,
+    .groups = "drop"
+  ) %>%
+  rowwise() %>%
+  mutate(
+    ci = list(wilson_ci(x, n, conf = 0.95)),
+    lb_w = ci[[1]],
+    ub_w = ci[[2]],
+    # cell formatting like screenshot: value on top, CI below
+    cell = sprintf("%.2f (%.2f-%.2f)", type1, lb_w, ub_w),
+    rho = sprintf("%.1f", as.numeric(rho_X))  # display like 0.0, 0.3, ...
+  ) %>%
+  ungroup() %>%
+  select(rho, sigma, method, cell) %>%
+  arrange(as.numeric(rho), sigma, method) %>%
+  pivot_wider(
+    names_from = method,
+    values_from = cell
+  )
+
+df_type1_wide[,3:8]
 ```
 
 
 ```{r}
+df_power_long <- coef_df %>%
+  filter(
+    scenario != "null",
+    method != "2iWQS:neg",
+    term != "(intercept)"
+  ) %>%
+  mutate(
+    method = str_squish(method),
+    term   = str_squish(term),
+    # key change: define reject0 safely (NA only if lb/ub missing)
+    reject0 = dplyr::if_else(!is.na(lb) & !is.na(ub), (lb > 0 | ub < 0), NA)
+  ) %>%
+  mutate(
+    method_disp = case_when(
+      method == "qgcomp nonlinear" & term %in% c("psi1", "psi2") ~ paste0("qgcomp nonlinear: ", term),
+      method == "qgcomp nonlinear"                               ~ NA_character_,  # drop other terms (if any)
+      TRUE                                                       ~ method
+    )
+  ) %>%
+  filter(!is.na(method_disp)) %>%
+  group_by(scenario, p, rho_X, sigma, method_disp) %>%
+  summarise(
+    x = sum(reject0 == TRUE, na.rm = TRUE),
+    n = sum(!is.na(reject0)),
+    power = ifelse(n > 0, x / n, NA_real_),
+    lb_w = ifelse(n > 0, wilson_ci(x, n)[["lower"]], NA_real_),
+    ub_w = ifelse(n > 0, wilson_ci(x, n)[["upper"]], NA_real_),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    cell = ifelse(
+      is.na(power),
+      NA_character_,
+      sprintf("%.2f (%.2f-%.2f)", power, lb_w, ub_w)
+    ),
+    method = method_disp
+  ) %>%
+  select(scenario, p, rho_X, sigma, method, cell, n)
+
+method_order <- c(
+  "BKMR", "BWS", "qgcomp", "qgcomp nonlinear: psi1", "qgcomp nonlinear: psi2", "WQS", "2iWQS:pos"
+  
+)
+
+df_power_wide <- df_power_long %>%
+  select(-n) %>%
+  mutate(method = factor(method, levels = method_order)) %>%
+arrange(scenario, p, rho_X, sigma, method) %>%
+  pivot_wider(names_from = method, values_from = cell)
+
+df_power_wide <- df_power_wide %>%      
+  select(BKMR, BWS, qgcomp, `qgcomp nonlinear: psi1`, `qgcomp nonlinear: psi2`, WQS, `2iWQS:pos`)
+df_power_wide
 df_power <- coef_df %>%
   filter(scenario != "null" & !(method %in% c("2iWQS:neg", "qgcomp nonlinear")) & term != "(intercept)") %>%
   mutate(reject0 = (lb > 0 | ub < 0)) %>%
-  group_by(scenario, rho_X, sigma, method) %>%
+  group_by(scenario, p, rho_X, sigma, method) %>%
   summarise(se = sd(reject0, na.rm = TRUE)/sqrt(500),
             tcrit  = qt(0.975, df = 500 - 1),   # 97.5% quantile of t_{n-1}
             mean = round(mean(reject0, na.rm = TRUE),2),
             lower  = round(mean - tcrit * se,2),                            # lower 95% CI
-            upper  = round(mean + tcrit * se,2),
-            rho = factor(rho_X))
+            upper  = round(mean + tcrit * se,2))
   # pivot_wider(names_from = method, values_from = mean)
+
+df_power_k5 <- df_power %>%
+  filter(sigma == 1)
 
 # Bar plot: power
 plot_power <- df_power %>%
-  filter(sigma == 2) %>%
+  filter(sigma == 1) %>%
   ggplot(aes(factor(method), mean, fill = method)) + 
   geom_bar(stat = "identity", position = position_dodge()) +
   scale_fill_manual(values = my_colors) +

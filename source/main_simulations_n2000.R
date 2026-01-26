@@ -32,7 +32,7 @@ params <- tidyr::crossing(
   scenario = scenarios,
   rho_X = rho_levels,
   sigma = sigma_levels,
-  n = 500,
+  n = 2000,
   p = 5
 ) %>%
   dplyr::mutate(batch = dplyr::row_number()) %>%

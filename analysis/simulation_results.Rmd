@@ -294,18 +294,19 @@ df_power <- coef_df %>%
             tcrit  = qt(0.975, df = 500 - 1),   # 97.5% quantile of t_{n-1}
             mean = round(mean(reject0, na.rm = TRUE),2),
             lower  = round(mean - tcrit * se,2),                            # lower 95% CI
-            upper  = round(mean + tcrit * se,2))
+            upper  = round(mean + tcrit * se,2),
+            rho = factor(rho_X))
   # pivot_wider(names_from = method, values_from = mean)
 
 # Bar plot: power
 plot_power <- df_power %>%
-  filter(sigma == 1) %>%
+  filter(sigma == 2) %>%
   ggplot(aes(factor(method), mean, fill = method)) + 
   geom_bar(stat = "identity", position = position_dodge()) +
   scale_fill_manual(values = my_colors) +
   # geom_hline(yintercept = 0.95, color = "red", lty = "dashed")+
-  facet_grid(rho_X~scenario, labeller = labeller(rho_X = label_both, scenario = label_value), scales = "free") +
-  labs(x = "", y = "Mean Power", fill = "Method") +
+  facet_grid(rho~scenario, labeller = labeller(rho = label_both, scenario = label_value), scales = "free") +
+  labs(x = "", y = "Power", fill = "Method") +
   theme(
     axis.title.x=element_blank(),
     axis.text.x = element_blank(),
@@ -343,12 +344,12 @@ ggplot(power_plot_df, aes(x = sigma, y = power, color = method, group = method))
 
 ```{r}
 perf_tbl <- delta_df %>%
-  filter(scenario != "null") %>%
-  group_by(method, scenario, rho_X, sigma) %>%
+  filter(sigma == 1) %>%
+  group_by(scenario, method, rho_X) %>%
   summarise(
-    bias = mean(bias, na.rm = TRUE),
-    rmse = sqrt(mean(sq_error, na.rm = TRUE)),
-    coverage = mean(covered, na.rm = TRUE),
+    bias = round(mean(bias, na.rm = TRUE),3),
+    rmse = round(sqrt(mean(sq_error, na.rm = TRUE)),3),
+    coverage = round(mean(covered, na.rm = TRUE),2),
     .groups = "drop"
   )
 
@@ -392,26 +393,15 @@ true_active <- function(scenario) {
   stop("Unknown scenario")
 }
 
-# normalize weights for qgcomp to sum abs=1 per replicate-method
-# weights_norm <- weights_df %>%
-#   group_by(batch, seed, method) %>%
-#   mutate(
-#     abs_sum = sum(abs(estimate), na.rm = TRUE),
-#     estimate_norm = ifelse(method == "qgcomp.noboot" & abs_sum > 0,
-#                            abs(estimate) / abs_sum,
-#                            estimate)
-#   ) %>%
-#   ungroup()
-
 # selection rule:
 # - For WQS/BWS (weights sum to 1): select if weight > 1/p
 # - For qgcomp.noboot: select if normalized abs(weight) > 1/p
 # - For BKMR PIP: select if PIP > 0.5 (conservative)
 weights_sel <- weights_df %>%
+  filter(!method %in% c("2iWQS:pos", "2iWQS:neg")) %>%
   mutate(
     thresh = case_when(
       method == "BKMR" ~ 0.5,
-      # method == "qgcomp.noboot" ~ 1 / p,
       TRUE ~ 1 / p
     ),
     selected = case_when(
@@ -419,10 +409,29 @@ weights_sel <- weights_df %>%
       method == "qgcomp" ~ (abs(estimate) > thresh),
       TRUE ~ (estimate > thresh)
     )
-  )
+  ) %>%
+  select(batch, scenario, n, p, rho_X, sigma, seed, method, mix_name, thresh, selected)
 
-sens_spec <- weights_sel %>%
-  filter(scenario != "null") %>%
+weights_wqs2 <- weights_df %>%
+  filter(method %in% c("2iWQS:pos", "2iWQS:neg")) %>%
+  mutate(component = if_else(grepl("pos", method), "pos", "neg"),
+         thresh = 1 / p) %>%
+  select(batch, scenario, n, p, rho_X, sigma, seed, mix_name, component, estimate, thresh) %>%
+      pivot_wider(
+        names_from = component,
+        values_from = estimate,
+        values_fn = dplyr::first
+      ) %>%
+      mutate(
+        method = "2iWQS",
+        selected = (pos > thresh) | (neg > thresh)
+      )  %>%
+  select(batch, scenario, n, p, rho_X, sigma, seed, method, mix_name, thresh, selected)
+      
+weights_sel <- weights_sel %>%
+  bind_rows(weights_wqs2)
+
+sens_spec <-weights_wqs2sens_spec <- weights_sel %>%
   group_by(method, scenario, rho_X, sigma, batch, seed) %>%
   summarise(
     active = list(true_active(first(scenario))),
@@ -444,16 +453,18 @@ sens_spec <- weights_sel %>%
     .groups = "drop"
   )
 
-sens_spec
+sens_spec$method <- factor(sens_spec$method, 
+                           levels = c("BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS", "2iWQS:pos", "2iWQS:neg"))
+sens_spec$rho <- sens_spec$rho_X
 
 plot_se <- sens_spec %>%
-  filter(sigma == 1) %>%
+  filter(scenario != "null" & sigma == 2) %>%
   ggplot(aes(factor(method), sensitivity, fill = method)) + 
   geom_bar(stat = "identity", position = position_dodge()) +
   scale_fill_manual(values = my_colors) +
   # geom_hline(yintercept = 0.95, color = "red", lty = "dashed")+
-  facet_grid(rho_X~scenario, labeller = labeller(rho_X = label_both, scenario = label_value), scales = "free") +
-  labs(x = "", y = "Mean Sensitivity", fill = "Method") +
+  facet_grid(rho~scenario, labeller = labeller(rho = label_both, scenario = label_value), scales = "free") +
+  labs(x = "", y = "Sensitivity", fill = "Method") +
   theme(
     axis.title.x=element_blank(),
     axis.text.x = element_blank(),
@@ -462,13 +473,13 @@ plot_se <- sens_spec %>%
 plot_se
 
 plot_sp <- sens_spec %>%
-  filter(sigma == 1) %>%
+  filter(scenario != "null" & sigma == 2) %>%
   ggplot(aes(factor(method), specificity, fill = method)) + 
   geom_bar(stat = "identity", position = position_dodge()) +
   scale_fill_manual(values = my_colors) +
   # geom_hline(yintercept = 0.95, color = "red", lty = "dashed")+
-  facet_grid(rho_X~scenario, labeller = labeller(rho_X = label_both, scenario = label_value), scales = "free") +
-  labs(x = "", y = "Mean Specificity", fill = "Method") +
+  facet_grid(rho~scenario, labeller = labeller(rho = label_both, scenario = label_value), scales = "free") +
+  labs(x = "", y = "Specificity", fill = "Method") +
   theme(
     axis.title.x=element_blank(),
     axis.text.x = element_blank(),

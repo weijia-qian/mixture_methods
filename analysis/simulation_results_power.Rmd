@@ -1,0 +1,160 @@
+---
+title: "Simulation Results Summary"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(here))
+
+theme_set(theme_minimal() + 
+            theme(legend.position = "bottom",
+                  ))
+# Define a custom color palette for the methods
+my_colors <- c(
+  "BKMR" = "#440154",
+  "BWS" = "#414487",
+  "qgcomp" = "#2A788E",
+  "qgcomp nonlinear" = "#7AD151",
+  "WQS" = "#FDE725",
+  "2iWQS" = "#E03C8A",
+  "2iWQS:pos" = "#B481BB"
+)
+fig_dir <- "/Users/weijia/Research/Frailty/analysis/figures"
+all_power <- readRDS(here("results", "all_power.rds")) %>%
+  filter(!scenario %in% c("Confounding", "Nonlinear effect", "Nonadditive effect")) %>%
+  mutate(scenario = case_when(str_detect(scenario, "Single") ~ "single",
+                              str_detect(scenario, "Homogeneous") ~ "homogeneous",
+                              str_detect(scenario, "Heterogeneous") ~ "heterogeneous"),
+         p = nX) %>%
+  pivot_longer(cols = c("BKMR", "BWS", "WQS", "WQS2: pos", "qgcomp.noboot"), names_to = "method", values_to = "mean") %>%
+  mutate(method = case_when(str_detect(method, "WQS2: pos") ~ "2iWQS:pos",
+                            str_detect(method, "qgcomp.noboot") ~ "qgcomp",
+                            TRUE ~ method))
+```
+
+## Load simulation outputs
+
+```{r}
+folder_path <- here("results", "k10_20")
+
+rda_files <- list.files(folder_path, pattern = "\\.RDA$", full.names = TRUE)
+length(rda_files)
+
+# Robust loader: guarantees we extract object named `results`
+all_results <- vector("list", length(rda_files))
+for (i in seq_along(rda_files)) {
+  e <- new.env()
+  load(rda_files[[i]], envir = e)
+  stopifnot(exists("results", envir = e))
+  all_results[[i]] <- get("results", envir = e)
+}
+
+```
+
+## Flatten outputs to tables
+
+```{r}
+all_coef <- list()
+all_weights <- list()
+all_bkmr <- list()
+
+for (batch_res in all_results) {
+  for (iter_res in batch_res) {
+    if (is.null(iter_res)) next
+    if (!is.null(iter_res$coef))    all_coef[[length(all_coef) + 1]] <- iter_res$coef
+    if (!is.null(iter_res$weights)) all_weights[[length(all_weights) + 1]] <- iter_res$weights
+    if (!is.null(iter_res$bkmr))    all_bkmr[[length(all_bkmr) + 1]] <- iter_res$bkmr
+  }
+}
+  
+weights_df <- bind_rows(all_weights) %>%
+  filter(!(method %in% c("qgcomp.noboot", "qgcomp.boot"))) %>%
+  bind_rows(all_weights_qg) %>% 
+  distinct() %>%
+  mutate(method = case_when(str_detect(method, "BKMR") ~ "BKMR",
+                             str_detect(method, "BWS") ~ "BWS",
+                             str_detect(method, "qgcomp.noboot") ~ "qgcomp",
+                             str_detect(method, "qgcomp.boot") ~ "qgcomp nonlinear",
+                             str_detect(method, "WQS2: pos") ~ "2iWQS:pos",
+                             str_detect(method, "WQS2: neg") ~ "2iWQS:neg",
+                             .default = "WQS"),
+         method = factor(method, levels = c("BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS", "2iWQS:pos", "2iWQS:neg")),
+         scenario = factor(scenario, levels = c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive")))
+
+bkmr_df <- bind_rows(all_bkmr) %>% distinct()
+# --- BKMR: already returns Delta(q, 0.5) for q=0.75 (empirical quantiles) ---
+bkmr_delta <- bkmr_df %>%
+  filter(abs(quantile - 0.75) < 1e-12) %>%
+  mutate(
+    method = "BKMR",
+    term = "delta",
+    estimate = est,
+    lb = est - 1.96 * sd,
+    ub = est + 1.96 * sd
+  ) %>%
+  select(batch, scenario, n, p, rho_X, sigma, seed, method, term, estimate, lb, ub)
+
+coef_df <- bind_rows(all_coef) %>%
+  bind_rows(bkmr_delta) %>%
+  distinct() %>%
+  mutate(method = case_when(str_detect(method, "BKMR") ~ "BKMR",
+                             str_detect(method, "BWS") ~ "BWS",
+                             str_detect(method, "qgcomp.noboot") ~ "qgcomp",
+                             str_detect(method, "qgcomp.boot") ~ "qgcomp nonlinear",
+                             str_detect(method, "WQS2: pos") ~ "2iWQS:pos",
+                             str_detect(method, "WQS2: neg") ~ "2iWQS:neg",
+                             .default = "WQS"),
+         method = factor(method, levels = c("BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS", "2iWQS:pos", "2iWQS:neg")),
+         scenario = factor(scenario, levels = c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive")))
+
+```
+
+
+```{r}
+df_power <- coef_df_k10_20 %>%
+  filter(scenario != "null" & !(method %in% c("2iWQS:neg", "qgcomp nonlinear")) & term != "(intercept)") %>%
+  mutate(reject0 = (lb > 0 | ub < 0)) %>%
+  group_by(scenario, p, rho_X, sigma, method) %>%
+  summarise(se = sd(reject0, na.rm = TRUE)/sqrt(500),
+            tcrit  = qt(0.975, df = 500 - 1),   # 97.5% quantile of t_{n-1}
+            mean = mean(reject0, na.rm = TRUE),
+            lower  = mean - tcrit * se,                            # lower 95% CI
+            upper  = mean + tcrit * se) %>%
+  select(scenario, p, rho_X, method, mean)
+
+all_power_2 <- all_power %>%
+  filter(p != 5) %>%
+  bind_rows(df_power_k5) %>%
+  bind_rows(df_power) %>%
+  rename(rho = rho_X) %>%
+  select(-sigma, -nX)
+
+all_power_2$method = factor(all_power_2$method, levels = c("BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS", "2iWQS:pos", "2iWQS:neg"))
+all_power_2$scenario = factor(all_power_2$scenario, levels = c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive"))
+saveRDS(all_power_2, here("results", "all_power_2.rds"))
+
+all_power_2 <- readRDS(here("results", "all_power_2.rds"))
+
+ggplot(all_power_2, aes(x = factor(p), y = mean, color = method, group = method)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  scale_color_manual(values = my_colors) +
+  facet_grid(rho~scenario, labeller = labeller(rho = label_both, scenario = label_value), scales = "free") +
+  labs(
+    x = "Number of exposures",
+    y = "Power",
+    color = "Method"
+  )
+```
+
+
+```{r}
+df_power$nX <- 5
+```
+

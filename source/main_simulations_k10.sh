@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH --array=1-6%6
-#SBATCH --job-name=k10_1
-#SBATCH --partition=week-long-cpu
-#SBATCH --output=main_simulations_k10_1.out
-#SBATCH --error=main_simulations_k10_1.err
+#SBATCH --array=1-18%18
+#SBATCH --job-name=k10_20_1
+#SBATCH --partition=wrobel
+#SBATCH --output=k10_20_1.out
+#SBATCH --error=k10_20_1.err
 
 module purge
 module load R/4.4.0

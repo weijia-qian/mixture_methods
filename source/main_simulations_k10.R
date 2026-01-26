@@ -24,16 +24,17 @@ source(here("source", "extract_estimates.R"))
 ###############################################################
 ## set simulation design elements
 ###############################################################
-scenarios <- c("nonlinear", "interactive")
+scenarios <- c("single", "homogeneous", "heterogeneous")
 rho_levels <- c(0, 0.4, 0.7)
 sigma_levels <- c(1.0)
+p_levels <- c(10, 20)
 
 params <- tidyr::crossing(
   scenario = scenarios,
   rho_X = rho_levels,
   sigma = sigma_levels,
   n = 500,
-  p = 10
+  p = p_levels
 ) %>%
   dplyr::mutate(batch = dplyr::row_number()) %>%
   dplyr::select(batch, dplyr::everything())
@@ -49,7 +50,7 @@ pick_top_exposures <- function(dat, Xnms, K = 4) {
 ###############################################################
 ## start simulation code
 ###############################################################
-nsim <- 50
+nsim <- 25
 
 if (doLocal) {
   batch <- 1
@@ -322,7 +323,7 @@ for (i in 1:nsim) {
 ####################
 # save results
 # date <- gsub("-", "", Sys.Date())
-dir.create(file.path(here("results"), "k10"), showWarnings = FALSE, recursive = TRUE)
+dir.create(file.path(here("results"), "k10_20"), showWarnings = FALSE, recursive = TRUE)
 
-filename <- file.path(here("results", "k10"), paste0(batch, "_k10_batch1.RDA"))
+filename <- file.path(here("results", "k10_20"), paste0(batch, "_k10_20_batch1.RDA"))
 save(results, file = filename)

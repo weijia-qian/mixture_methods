@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --array=1-6%6
-#SBATCH --job-name=n2000_3
+#SBATCH --job-name=n2000_2
 #SBATCH --partition=wrobel
-#SBATCH --output=main_simulations_n2000_3.out
-#SBATCH --error=main_simulations_n2000_3.err
+#SBATCH --output=main_simulations_n2000_2.out
+#SBATCH --error=main_simulations_n2000_2.err
 
 module purge
 module load R/4.4.0

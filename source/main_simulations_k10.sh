@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --array=1-18%18
-#SBATCH --job-name=k10_20_2
+#SBATCH --job-name=k10_20_3
 #SBATCH --partition=wrobel
-#SBATCH --output=k10_20_2.out
-#SBATCH --error=k10_20_2.err
+#SBATCH --output=k10_20_3.out
+#SBATCH --error=k10_20_3.err
 
 module purge
 module load R/4.4.0

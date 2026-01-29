@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --array=1-18%18
-#SBATCH --job-name=n2000_4
+#SBATCH --job-name=n2000_3
 #SBATCH --partition=chang
-#SBATCH --output=n2000_4.out
-#SBATCH --error=n2000_4.err
+#SBATCH --output=n2000_3.out
+#SBATCH --error=n2000_3.err
 
 module purge
 module load R/4.4.0

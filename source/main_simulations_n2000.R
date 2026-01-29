@@ -25,7 +25,7 @@ source(here("source", "extract_estimates.R"))
 ## set simulation design elements
 ###############################################################
 scenarios <- c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive")
-rho_levels <- c(0.4)
+rho_levels <- c(0, 0.4, 0.7)
 sigma_levels <- c(1.0)
 
 params <- tidyr::crossing(
@@ -52,8 +52,6 @@ if (doLocal) {
 
 param <- params[batch, ]
 
-# reproducible seeds per batch
-set.seed(10000 + batch)
 seed <- sample.int(1e8, nsim)
 
 results <- vector("list", length = nsim)
@@ -62,7 +60,9 @@ Xnms <- paste0("X", 1:param$p)
 
 for (i in 1:nsim) {
   cat("batch:", batch, ", i:", i, "\n")
+  set.seed(seed[i])
   tic()
+  
   ####################
   # simulate data
   simdata <- simulate_data(
@@ -70,8 +70,7 @@ for (i in 1:nsim) {
     p = param$p,
     scenario = param$scenario,
     rho_X = param$rho_X,
-    sigma = param$sigma,
-    seed = seed[i]
+    sigma = param$sigma
   )
   
   ####################

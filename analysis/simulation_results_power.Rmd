@@ -61,32 +61,32 @@ for (i in seq_along(rda_files)) {
 
 ```{r}
 all_coef <- list()
-all_weights <- list()
+# all_weights <- list()
 all_bkmr <- list()
 
 for (batch_res in all_results) {
   for (iter_res in batch_res) {
     if (is.null(iter_res)) next
     if (!is.null(iter_res$coef))    all_coef[[length(all_coef) + 1]] <- iter_res$coef
-    if (!is.null(iter_res$weights)) all_weights[[length(all_weights) + 1]] <- iter_res$weights
+    # if (!is.null(iter_res$weights)) all_weights[[length(all_weights) + 1]] <- iter_res$weights
     if (!is.null(iter_res$bkmr))    all_bkmr[[length(all_bkmr) + 1]] <- iter_res$bkmr
   }
 }
   
-weights_df <- bind_rows(all_weights) %>%
-  filter(!(method %in% c("qgcomp.noboot", "qgcomp.boot"))) %>%
-  bind_rows(all_weights_qg) %>% 
-  distinct() %>%
-  mutate(method = case_when(str_detect(method, "BKMR") ~ "BKMR",
-                             str_detect(method, "BWS") ~ "BWS",
-                             str_detect(method, "qgcomp.noboot") ~ "qgcomp",
-                             str_detect(method, "qgcomp.boot") ~ "qgcomp nonlinear",
-                             str_detect(method, "WQS2: pos") ~ "2iWQS:pos",
-                             str_detect(method, "WQS2: neg") ~ "2iWQS:neg",
-                             .default = "WQS"),
-         method = factor(method, levels = c("BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS", "2iWQS:pos", "2iWQS:neg")),
-         scenario = factor(scenario, levels = c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive")))
-
+# weights_df <- bind_rows(all_weights) %>%
+#   filter(!(method %in% c("qgcomp.noboot", "qgcomp.boot"))) %>%
+#   bind_rows(all_weights_qg) %>% 
+#   distinct() %>%
+#   mutate(method = case_when(str_detect(method, "BKMR") ~ "BKMR",
+#                              str_detect(method, "BWS") ~ "BWS",
+#                              str_detect(method, "qgcomp.noboot") ~ "qgcomp",
+#                              str_detect(method, "qgcomp.boot") ~ "qgcomp nonlinear",
+#                              str_detect(method, "WQS2: pos") ~ "2iWQS:pos",
+#                              str_detect(method, "WQS2: neg") ~ "2iWQS:neg",
+#                              .default = "WQS"),
+#          method = factor(method, levels = c("BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS", "2iWQS:pos", "2iWQS:neg")),
+#          scenario = factor(scenario, levels = c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive")))
+# 
 bkmr_df <- bind_rows(all_bkmr) %>% distinct()
 # --- BKMR: already returns Delta(q, 0.5) for q=0.75 (empirical quantiles) ---
 bkmr_delta <- bkmr_df %>%
@@ -117,7 +117,7 @@ coef_df <- bind_rows(all_coef) %>%
 
 
 ```{r}
-df_power <- coef_df_k10_20 %>%
+df_power <- coef_df %>%
   filter(scenario != "null" & !(method %in% c("2iWQS:neg", "qgcomp nonlinear")) & term != "(intercept)") %>%
   mutate(reject0 = (lb > 0 | ub < 0)) %>%
   group_by(scenario, p, rho_X, sigma, method) %>%
@@ -126,24 +126,32 @@ df_power <- coef_df_k10_20 %>%
             mean = mean(reject0, na.rm = TRUE),
             lower  = mean - tcrit * se,                            # lower 95% CI
             upper  = mean + tcrit * se) %>%
-  select(scenario, p, rho_X, method, mean)
-
-all_power_2 <- all_power %>%
-  filter(p != 5) %>%
-  bind_rows(df_power_k5) %>%
-  bind_rows(df_power) %>%
   rename(rho = rho_X) %>%
-  select(-sigma, -nX)
+  select(scenario, p, rho, method, mean)
 
-all_power_2$method = factor(all_power_2$method, levels = c("BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS", "2iWQS:pos", "2iWQS:neg"))
-all_power_2$scenario = factor(all_power_2$scenario, levels = c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive"))
-saveRDS(all_power_2, here("results", "all_power_2.rds"))
+# all_power_2 <- all_power %>%
+#   filter(p != 5) %>%
+#   bind_rows(df_power_k5) %>%
+#   bind_rows(df_power) %>%
+#   rename(rho = rho_X) %>%
+#   select(-sigma, -nX)
+# 
+# all_power_2$method = factor(all_power_2$method, levels = c("BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS", "2iWQS:pos", "2iWQS:neg"))
+# all_power_2$scenario = factor(all_power_2$scenario, levels = c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive"))
+# saveRDS(all_power_2, here("results", "all_power_2.rds"))
+
+# all_power_2 <- readRDS(here("results", "all_power_2.rds"))
+# all_power_2 <- all_power_2 %>%
+#   filter(p == 5 | scenario %in% c("nonlinear", "interactive")) %>%
+#   bind_rows(df_power) %>%
+#   arrange(scenario, rho, p)
+# saveRDS(all_power_2, here("results", "all_power_2.rds"))
 
 all_power_2 <- readRDS(here("results", "all_power_2.rds"))
 
 ggplot(all_power_2, aes(x = factor(p), y = mean, color = method, group = method)) +
-  geom_line(linewidth = 1) +
-  geom_point(size = 2) +
+  geom_line(linewidth = 1, alpha = 0.75) +
+  geom_point(size = 2, alpha = 0.75) +
   scale_color_manual(values = my_colors) +
   facet_grid(rho~scenario, labeller = labeller(rho = label_both, scenario = label_value), scales = "free") +
   labs(
@@ -153,8 +161,4 @@ ggplot(all_power_2, aes(x = factor(p), y = mean, color = method, group = method)
   )
 ```
 
-
-```{r}
-df_power$nX <- 5
-```
 

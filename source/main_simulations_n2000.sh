@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --array=1-6%6
+#SBATCH --array=1-18%18
 #SBATCH --job-name=n2000_10
 #SBATCH --partition=wrobel
 #SBATCH --output=n2000_10.out

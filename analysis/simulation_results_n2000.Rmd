@@ -1,5 +1,5 @@
 ---
-title: "Simulation Results Summary (N2000)"
+title: "Simulation Results Summary"
 output:
   html_document:
     toc: true
@@ -11,13 +11,27 @@ output:
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(library(here))
+
+theme_set(theme_minimal() + 
+            theme(legend.position = "bottom",
+                  ))
+# Define a custom color palette for the methods
+my_colors <- c(
+  "BKMR" = "#440154",
+  "BWS" = "#414487",
+  "qgcomp" = "#2A788E",
+  "qgcomp nonlinear" = "#7AD151",
+  "WQS" = "#FDE725",
+  "2iWQS" = "#E03C8A",
+  "2iWQS:pos" = "#B481BB"
+)
+fig_dir <- "/Users/weijia/Research/Frailty/analysis/figures"
 ```
 
 ## Load simulation outputs
 
 ```{r}
-# TODO: update date folder
-folder_path <- here("results", "n2000")
+folder_path <- here("results", "k5")
 
 rda_files <- list.files(folder_path, pattern = "\\.RDA$", full.names = TRUE)
 length(rda_files)
@@ -29,6 +43,34 @@ for (i in seq_along(rda_files)) {
   load(rda_files[[i]], envir = e)
   stopifnot(exists("results", envir = e))
   all_results[[i]] <- get("results", envir = e)
+}
+
+folder_path <- here("results", "qgcomp")
+
+rda_files <- list.files(folder_path, pattern = "\\.RDA$", full.names = TRUE)
+length(rda_files)
+
+# Robust loader: guarantees we extract object named `results`
+all_qgcomp <- vector("list", length(rda_files))
+for (i in seq_along(rda_files)) {
+  e <- new.env()
+  load(rda_files[[i]], envir = e)
+  stopifnot(exists("results", envir = e))
+  all_qgcomp[[i]] <- get("results", envir = e)
+}
+
+folder_path <- here("results", "wqs2_qg")
+
+rda_files <- list.files(folder_path, pattern = "\\.RDA$", full.names = TRUE)
+length(rda_files)
+
+# Robust loader: guarantees we extract object named `results`
+all_wqs2_qg <- vector("list", length(rda_files))
+for (i in seq_along(rda_files)) {
+  e <- new.env()
+  load(rda_files[[i]], envir = e)
+  stopifnot(exists("results", envir = e))
+  all_wqs2_qg[[i]] <- get("results", envir = e)
 }
 ```
 
@@ -48,13 +90,74 @@ for (batch_res in all_results) {
   }
 }
 
-coef_df <- bind_rows(all_coef)
-weights_df <- bind_rows(all_weights)
-bkmr_df <- bind_rows(all_bkmr)
+all_coef_qg <- list()
+all_weights_qg <- list()
 
-glimpse(coef_df)
-glimpse(weights_df)
-glimpse(bkmr_df)
+for (batch_res in all_qgcomp) {
+  for (iter_res in batch_res) {
+    if (is.null(iter_res)) next
+    if (!is.null(iter_res$coef))    all_coef_qg[[length(all_coef_qg) + 1]] <- iter_res$coef
+    if (!is.null(iter_res$weights)) all_weights_qg[[length(all_weights_qg) + 1]] <- iter_res$weights
+  }
+}
+
+all_coef_wqs2_qg <- list()
+all_weights_wqs2_qg <- list()
+
+for (batch_res in all_wqs2_qg) {
+  for (iter_res in batch_res) {
+    if (is.null(iter_res)) next
+    if (!is.null(iter_res$coef))    all_coef_wqs2_qg[[length(all_coef_wqs2_qg) + 1]] <- iter_res$coef
+    if (!is.null(iter_res$weights)) all_weights_wqs2_qg[[length(all_weights_wqs2_qg) + 1]] <- iter_res$weights
+  }
+}
+  
+weights_df <- bind_rows(all_weights) %>%
+  filter(!(method %in% c("qgcomp.noboot", "qgcomp.boot"))) %>%
+  bind_rows(all_weights_qg) %>% 
+  distinct() %>%
+  mutate(method = case_when(str_detect(method, "BKMR") ~ "BKMR",
+                             str_detect(method, "BWS") ~ "BWS",
+                             str_detect(method, "qgcomp.noboot") ~ "qgcomp",
+                             str_detect(method, "qgcomp.boot") ~ "qgcomp nonlinear",
+                             str_detect(method, "WQS2: pos") ~ "2iWQS:pos",
+                             str_detect(method, "WQS2: neg") ~ "2iWQS:neg",
+                             .default = "WQS"),
+         method = factor(method, levels = c("BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS", "2iWQS:pos", "2iWQS:neg")),
+         scenario = factor(scenario, levels = c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive")))
+
+bkmr_df <- bind_rows(all_bkmr) %>% distinct()
+# --- BKMR: already returns Delta(q, 0.5) for q=0.75 (empirical quantiles) ---
+bkmr_delta <- bkmr_df %>%
+  filter(abs(quantile - 0.75) < 1e-12) %>%
+  mutate(
+    method = "BKMR",
+    term = "delta",
+    estimate = est,
+    lb = est - 1.96 * sd,
+    ub = est + 1.96 * sd
+  ) %>%
+  select(batch, scenario, n, p, rho_X, sigma, seed, method, term, estimate, lb, ub)
+
+qg_df <- bind_rows(all_coef_qg)
+wqs2_qg_df <- bind_rows(all_coef_wqs2_qg)
+coef_df <- bind_rows(all_coef)%>%
+  filter(!(method %in% c("WQS2: pos", "WQS2: neg", "qgcomp.noboot", "qgcomp.boot"))) %>%
+  bind_rows(wqs2_qg_df) %>% 
+  # bind_rows(wqs2_qg_df) %>% 
+  bind_rows(bkmr_delta) %>%
+  distinct() %>%
+  mutate(method = case_when(str_detect(method, "BKMR") ~ "BKMR",
+                             str_detect(method, "BWS") ~ "BWS",
+                             str_detect(method, "qgcomp.noboot") ~ "qgcomp",
+                             str_detect(method, "qgcomp.boot") ~ "qgcomp nonlinear",
+                             str_detect(method, "WQS2: pos") ~ "2iWQS:pos",
+                             str_detect(method, "WQS2: neg") ~ "2iWQS:neg",
+                             str_detect(method, "2iWQS") ~ "2iWQS",
+                             .default = "WQS"),
+         method = factor(method, levels = c("BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS", "2iWQS:pos", "2iWQS:neg")),
+         scenario = factor(scenario, levels = c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive")))
+
 ```
 
 ## Define the true joint-effect contrast Δ(75,50)
@@ -105,38 +208,96 @@ truth_tbl
 For most methods, we use their reported joint-effect parameter as the estimate of the contrast (consistent with your previous summaries). For BKMR, we use the OverallRiskSummaries at quantile = 0.75 (already relative to q.fixed=0.5).
 
 ```{r}
-# Extract BKMR delta and CI
-bkmr_delta <- bkmr_df %>%
-  filter(abs(quantile - 0.75) < 1e-12) %>%
+# Continuous contrast step for N(0,1): median=0, 75th=qnorm(0.75)
+step_cont <- qnorm(0.75) - qnorm(0.5)  # = qnorm(0.75)
+
+# --- WQS (single index): use its reported slope as the contrast ---
+wqs_delta <- coef_df %>%
+  filter(method == "WQS") %>%
+  # keep the mixture term only (usually "wqs")
+  arrange(batch, seed) %>%
+  select(batch, scenario, n, p, rho_X, sigma, seed, method, term, estimate, lb, ub) %>%
+  select(-term)
+
+# --- WQS2 (two indices): continuous contrast corresponds to +1 quartile-category shift for both indices
+# so the joint contrast is beta_pos + beta_neg
+wqs2_delta <- coef_df %>%
+  filter(method == "2iWQS") %>%
+  # keep the mixture term only (usually "wqs")
+  arrange(batch, seed) %>%
+  select(batch, scenario, n, p, rho_X, sigma, seed, method, term, estimate, lb, ub) %>%
+  select(-term)
+
+# wqs2_delta <- coef_df %>%
+#   filter(method %in% c("2iWQS:pos", "2iWQS:neg")) %>%
+#   filter(!term %in% c("(Intercept)", "Intercept")) %>%
+#   mutate(component = ifelse(grepl("pos", method), "pos", "neg")) %>%
+#   select(batch, scenario, n, p, rho_X, sigma, seed,
+#          component, estimate, lb, ub) %>%
+#   tidyr::pivot_wider(
+#     names_from = component,
+#     values_from = c(estimate, lb, ub),
+#     values_fn = dplyr::first
+#   ) %>%
+#   mutate(
+#     method = "2iWQS",
+#     estimate = estimate_pos + estimate_neg,
+#     lb = lb_pos + lb_neg,
+#     ub = ub_pos + ub_neg
+#   ) %>%
+#   select(batch, scenario, n, p, rho_X, sigma, seed, method, estimate, lb, ub)
+
+# --- qgcomp.noboot (degree=1): psi1 corresponds to a 1-category quartile increase -> matches median->75th
+qgcomp_delta <- coef_df %>%
+  filter(method == "qgcomp") %>%
+  select(batch, scenario, n, p, rho_X, sigma, seed, method, term, estimate, lb, ub) %>%
+  filter(term != "(Intercept)") %>%
+  select(-term) %>%
   mutate(
-    method = "BKMR",
-    estimate = est,
-    lb = est - 1.96 * sd,
-    ub = est + 1.96 * sd
+    method = "qgcomp")
+
+# --- qgcomp.boot nonlinear (degree=2): contrast for 1-step increase is psi1 + psi2
+# (Intercept), psi1, psi2 exist in your updated model
+qgcomp_nonlinear_delta <- coef_df %>%
+  filter(method == "qgcomp nonlinear" & term == "delta") %>%
+  arrange(batch, seed) %>%
+  select(batch, scenario, n, p, rho_X, sigma, seed, method, term, estimate, lb, ub) %>%
+  select(-term)
+
+# --- BWS: theta1 is slope per 1-unit increase in weighted index sum(w_j X_j).
+# Under continuous contrast where all X_j shift by step_cont and sum(w)=1:
+# Delta = theta1 * step_cont
+bws_delta <- coef_df %>%
+  filter(method == "BWS") %>%
+  select(batch, scenario, n, p, rho_X, sigma, seed, method, term, estimate, lb, ub) %>%
+  filter(term == "theta1") %>%
+  mutate(
+    estimate = estimate * step_cont,
+    lb = lb * step_cont,
+    ub = ub * step_cont
   ) %>%
-  select(batch, scenario, n, p, rho_X, sigma, seed, method, estimate, lb, ub)
+  select(-term)
 
-# For coef-based methods, pick the primary mixture effect term:
-# - WQS: term should be "wqs"
-# - WQS2: evaluate pos and neg separately (optional); here we keep both and label by method already
-# - qgcomp.noboot: term is typically "psi1"
-# - BWS: term is "theta1"
-coef_delta <- coef_df %>%
-  filter(method %in% c("WQS", "WQS2: pos", "WQS2: neg", "qgcomp.noboot", "BWS")) %>%
-  select(batch, scenario, n, p, rho_X, sigma, seed, method, term, estimate, lb, ub)
-
+# --- Combine all methods ---
 delta_df <- bind_rows(
   bkmr_delta,
-  coef_delta %>% select(-term)
+  wqs_delta,
+  wqs2_delta,
+  qgcomp_delta,
+  qgcomp_nonlinear_delta,
+  bws_delta
 ) %>%
   left_join(truth_tbl, by = c("scenario", "p")) %>%
   mutate(
+    method = factor(method, levels = c("BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS", "2iWQS:pos", "2iWQS:neg")),
+         scenario = factor(scenario, levels = c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive")),
     bias = estimate - true_delta,
     sq_error = (estimate - true_delta)^2,
-    covered = ifelse(!is.na(lb) & !is.na(ub), (lb <= true_delta & true_delta <= ub), NA)
+    covered = ifelse(!is.na(lb) & !is.na(ub),
+                     (lb <= true_delta & true_delta <= ub),
+                     NA)
   )
 
-# glimpse(delta_df)
 ```
 
 ## Type I error and power (by method, scenario, rho, sigma)
@@ -146,45 +307,198 @@ We use CI inclusion logic:
 - Power: non-null scenarios, reject if CI excludes 0.
 
 ```{r}
-delta_df <- delta_df %>%
-  mutate(
-    reject0 = (lb > 0 | ub < 0)
-  )
-
-type1_tbl <- delta_df %>%
-  filter(scenario == "null") %>%
-  group_by(method, rho_X, sigma) %>%
-  summarise(
-    type1 = mean(reject0, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-power_tbl <- delta_df %>%
-  filter(scenario != "null") %>%
+df_type1 <- coef_df %>%
+  filter(scenario == "null" & method != "qgcomp nonlinear") %>%
+  mutate(reject0 = (lb > 0 | ub < 0)) %>%
   group_by(method, scenario, rho_X, sigma) %>%
+  summarise(type1 = round(mean(reject0, na.rm = TRUE),2))
+df_type1
+
+# --- Wilson CI helper (no extra packages needed) ---
+wilson_ci <- function(x, n, conf = 0.95) {
+  if (n == 0) return(c(NA_real_, NA_real_))
+  z <- qnorm(1 - (1 - conf) / 2)
+  phat <- x / n
+  denom <- 1 + z^2 / n
+  center <- (phat + z^2 / (2 * n)) / denom
+  half <- z * sqrt(phat * (1 - phat) / n + z^2 / (4 * n^2)) / denom
+  c(lower = max(0, center - half), upper = min(1, center + half))
+}
+
+# --- Build Type I error table with Wilson CI ---
+df_type1_wide <- coef_df %>%
+  filter(scenario == "null", method != "qgcomp nonlinear") %>%
+  mutate(
+    reject0 = (lb > 0 | ub < 0)  # reject H0: effect=0 if CI excludes 0
+  ) %>%
+  group_by(rho_X, sigma, method) %>%
   summarise(
-    power = mean(reject0, na.rm = TRUE),
+    x = sum(reject0, na.rm = TRUE),
+    n = sum(!is.na(reject0)),
+    type1 = x / n,
     .groups = "drop"
+  ) %>%
+  rowwise() %>%
+  mutate(
+    ci = list(wilson_ci(x, n, conf = 0.95)),
+    lb_w = ci[[1]],
+    ub_w = ci[[2]],
+    # cell formatting like screenshot: value on top, CI below
+    cell = sprintf("%.2f (%.2f-%.2f)", type1, lb_w, ub_w),
+    rho = sprintf("%.1f", as.numeric(rho_X))  # display like 0.0, 0.3, ...
+  ) %>%
+  ungroup() %>%
+  select(rho, sigma, method, cell) %>%
+  arrange(as.numeric(rho), sigma, method) %>%
+  pivot_wider(
+    names_from = method,
+    values_from = cell
   )
 
-type1_tbl
-power_tbl
+df_type1_wide[,3:8]
 ```
+
+
+```{r}
+df_power_long <- coef_df %>%
+  filter(
+    scenario != "null",
+    method != "2iWQS:neg",
+    term != "(intercept)"
+  ) %>%
+  mutate(
+    method = str_squish(method),
+    term   = str_squish(term),
+    # key change: define reject0 safely (NA only if lb/ub missing)
+    reject0 = dplyr::if_else(!is.na(lb) & !is.na(ub), (lb > 0 | ub < 0), NA)
+  ) %>%
+  mutate(
+    method_disp = case_when(
+      method == "qgcomp nonlinear" & term %in% c("psi1", "psi2") ~ paste0("qgcomp nonlinear: ", term),
+      method == "qgcomp nonlinear"                               ~ NA_character_,  # drop other terms (if any)
+      TRUE                                                       ~ method
+    )
+  ) %>%
+  filter(!is.na(method_disp)) %>%
+  group_by(scenario, p, rho_X, sigma, method_disp) %>%
+  summarise(
+    x = sum(reject0 == TRUE, na.rm = TRUE),
+    n = sum(!is.na(reject0)),
+    power = ifelse(n > 0, x / n, NA_real_),
+    lb_w = ifelse(n > 0, wilson_ci(x, n)[["lower"]], NA_real_),
+    ub_w = ifelse(n > 0, wilson_ci(x, n)[["upper"]], NA_real_),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    cell = ifelse(
+      is.na(power),
+      NA_character_,
+      sprintf("%.2f (%.2f-%.2f)", power, lb_w, ub_w)
+    ),
+    method = method_disp
+  ) %>%
+  select(scenario, p, rho_X, sigma, method, cell, n)
+
+method_order <- c(
+  "BKMR", "BWS", "qgcomp", "qgcomp nonlinear: psi1", "qgcomp nonlinear: psi2", "WQS", "2iWQS:pos"
+  
+)
+
+df_power_wide <- df_power_long %>%
+  select(-n) %>%
+  mutate(method = factor(method, levels = method_order)) %>%
+arrange(scenario, p, rho_X, sigma, method) %>%
+  pivot_wider(names_from = method, values_from = cell)
+
+df_power_wide <- df_power_wide %>%      
+  select(BKMR, BWS, qgcomp, `qgcomp nonlinear: psi1`, `qgcomp nonlinear: psi2`, WQS, `2iWQS:pos`)
+df_power_wide
+df_power <- coef_df %>%
+  filter(scenario != "null" & !(method %in% c("2iWQS:neg", "qgcomp nonlinear")) & term != "(intercept)") %>%
+  mutate(reject0 = (lb > 0 | ub < 0)) %>%
+  group_by(scenario, p, rho_X, sigma, method) %>%
+  summarise(se = sd(reject0, na.rm = TRUE)/sqrt(500),
+            tcrit  = qt(0.975, df = 500 - 1),   # 97.5% quantile of t_{n-1}
+            mean = round(mean(reject0, na.rm = TRUE),2),
+            lower  = round(mean - tcrit * se,2),                            # lower 95% CI
+            upper  = round(mean + tcrit * se,2))
+  # pivot_wider(names_from = method, values_from = mean)
+
+df_power_k5 <- df_power %>%
+  filter(sigma == 1)
+
+# Bar plot: power
+plot_power <- df_power %>%
+  filter(sigma == 1) %>%
+  ggplot(aes(factor(method), mean, fill = method)) + 
+  geom_bar(stat = "identity", position = position_dodge()) +
+  scale_fill_manual(values = my_colors) +
+  # geom_hline(yintercept = 0.95, color = "red", lty = "dashed")+
+  facet_grid(rho~scenario, labeller = labeller(rho = label_both, scenario = label_value), scales = "free") +
+  labs(x = "", y = "Power", fill = "Method") +
+  theme(
+    axis.title.x=element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+  )
+plot_power
+```
+
+```{r}
+power_plot_df <- power_tbl %>%
+  mutate(
+    rho_X = factor(rho_X),
+    scenario = factor(scenario),
+    method = factor(method)
+  )
+
+ggplot(power_plot_df, aes(x = sigma, y = power, color = method, group = method)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  facet_grid(rho_X~scenario) +
+  labs(
+    x = "Number of exposures (K)",
+    y = "Power",
+    color = "Method",
+    title = "Power vs K by scenario and correlation"
+  ) +
+  theme(
+    legend.position = "top",
+    strip.text = element_text(face = "bold")
+  )
+```
+
 
 ## Bias, RMSE, and 95% coverage
 
 ```{r}
 perf_tbl <- delta_df %>%
-  filter(scenario != "null") %>%
-  group_by(method, scenario, rho_X, sigma) %>%
+  filter(sigma == 2) %>%
+  group_by(scenario, method, rho_X) %>%
   summarise(
-    bias = mean(bias, na.rm = TRUE),
-    rmse = sqrt(mean(sq_error, na.rm = TRUE)),
-    coverage = mean(covered, na.rm = TRUE),
+    bias = round(mean(bias, na.rm = TRUE),3),
+    rmse = round(sqrt(mean(sq_error, na.rm = TRUE)),3),
+    coverage = round(mean(covered, na.rm = TRUE),2),
     .groups = "drop"
   )
 
-perf_tbl
+collapse_rho <- function(x) {
+  paste(sprintf("%.3f", x), collapse = " / ")
+}
+
+table2 <- perf_tbl %>%
+  mutate(
+    rho_X = factor(rho_X, levels = c(0, 0.4, 0.7))
+  ) %>%
+  arrange(scenario, method, rho_X) %>%
+  group_by(scenario, method) %>%
+  summarise(
+    `Bias (ρ = 0 / 0.4 / 0.7)`     = collapse_rho(bias),
+    `RMSE (ρ = 0 / 0.4 / 0.7)`     = collapse_rho(rmse),
+    `Coverage (ρ = 0 / 0.4 / 0.7)` = paste(sprintf("%.2f", coverage), collapse = " / "),
+    .groups = "drop"
+  )
+table2[,3:5]
 ```
 
 ## Weight sensitivity/specificity
@@ -209,37 +523,45 @@ true_active <- function(scenario) {
   stop("Unknown scenario")
 }
 
-# normalize weights for qgcomp to sum abs=1 per replicate-method
-weights_norm <- weights_df %>%
-  group_by(batch, seed, method) %>%
-  mutate(
-    abs_sum = sum(abs(estimate), na.rm = TRUE),
-    estimate_norm = ifelse(method == "qgcomp.noboot" & abs_sum > 0,
-                           abs(estimate) / abs_sum,
-                           estimate)
-  ) %>%
-  ungroup()
-
 # selection rule:
 # - For WQS/BWS (weights sum to 1): select if weight > 1/p
 # - For qgcomp.noboot: select if normalized abs(weight) > 1/p
 # - For BKMR PIP: select if PIP > 0.5 (conservative)
-weights_sel <- weights_norm %>%
+weights_sel <- weights_df %>%
+  filter(!method %in% c("2iWQS:pos", "2iWQS:neg")) %>%
   mutate(
     thresh = case_when(
       method == "BKMR" ~ 0.5,
-      method == "qgcomp.noboot" ~ 1 / p,
       TRUE ~ 1 / p
     ),
     selected = case_when(
       method == "BKMR" ~ (estimate > thresh),
-      method == "qgcomp.noboot" ~ (estimate_norm > thresh),
+      method == "qgcomp" ~ (abs(estimate) > thresh),
       TRUE ~ (estimate > thresh)
     )
-  )
+  ) %>%
+  select(batch, scenario, n, p, rho_X, sigma, seed, method, mix_name, thresh, selected)
 
-sens_spec <- weights_sel %>%
-  filter(scenario != "null") %>%
+weights_wqs2 <- weights_df %>%
+  filter(method %in% c("2iWQS:pos", "2iWQS:neg")) %>%
+  mutate(component = if_else(grepl("pos", method), "pos", "neg"),
+         thresh = 1 / p) %>%
+  select(batch, scenario, n, p, rho_X, sigma, seed, mix_name, component, estimate, thresh) %>%
+      pivot_wider(
+        names_from = component,
+        values_from = estimate,
+        values_fn = dplyr::first
+      ) %>%
+      mutate(
+        method = "2iWQS",
+        selected = (pos > thresh) | (neg > thresh)
+      )  %>%
+  select(batch, scenario, n, p, rho_X, sigma, seed, method, mix_name, thresh, selected)
+      
+weights_sel <- weights_sel %>%
+  bind_rows(weights_wqs2)
+
+sens_spec <-weights_wqs2sens_spec <- weights_sel %>%
   group_by(method, scenario, rho_X, sigma, batch, seed) %>%
   summarise(
     active = list(true_active(first(scenario))),
@@ -261,5 +583,46 @@ sens_spec <- weights_sel %>%
     .groups = "drop"
   )
 
-sens_spec
+sens_spec$method <- factor(sens_spec$method, 
+                           levels = c("BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS", "2iWQS:pos", "2iWQS:neg"))
+sens_spec$rho <- sens_spec$rho_X
+
+plot_se <- sens_spec %>%
+  filter(scenario != "null" & sigma == 2) %>%
+  ggplot(aes(factor(method), sensitivity, fill = method)) + 
+  geom_bar(stat = "identity", position = position_dodge()) +
+  scale_fill_manual(values = my_colors) +
+  # geom_hline(yintercept = 0.95, color = "red", lty = "dashed")+
+  facet_grid(rho~scenario, labeller = labeller(rho = label_both, scenario = label_value), scales = "free") +
+  labs(x = "", y = "Sensitivity", fill = "Method") +
+  theme(
+    axis.title.x=element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+  )
+plot_se
+
+plot_sp <- sens_spec %>%
+  filter(scenario != "null" & sigma == 2) %>%
+  ggplot(aes(factor(method), specificity, fill = method)) + 
+  geom_bar(stat = "identity", position = position_dodge()) +
+  scale_fill_manual(values = my_colors) +
+  # geom_hline(yintercept = 0.95, color = "red", lty = "dashed")+
+  facet_grid(rho~scenario, labeller = labeller(rho = label_both, scenario = label_value), scales = "free") +
+  labs(x = "", y = "Specificity", fill = "Method") +
+  theme(
+    axis.title.x=element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+  )
+plot_sp
 ```
+```{r}
+df_aic <- coef_df %>%
+  filter(!is.na(AIC_qgcomp)) %>%
+  group_by(sigma, scenario, rho_X, seed) %>%
+  summarize(favor_nonlinear = AIC_qgcomp[1] > AIC_qgcomp_ext[1], .groups = "drop") %>%
+  group_by(sigma, scenario, rho_X) %>%
+  summarize(pct_favor_nonlinear = round(mean(favor_nonlinear), 4), .groups = "drop")
+```
+

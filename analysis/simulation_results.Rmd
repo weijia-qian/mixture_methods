@@ -58,6 +58,20 @@ for (i in seq_along(rda_files)) {
   stopifnot(exists("results", envir = e))
   all_qgcomp[[i]] <- get("results", envir = e)
 }
+
+folder_path <- here("results", "wqs2_qg")
+
+rda_files <- list.files(folder_path, pattern = "\\.RDA$", full.names = TRUE)
+length(rda_files)
+
+# Robust loader: guarantees we extract object named `results`
+all_wqs2_qg <- vector("list", length(rda_files))
+for (i in seq_along(rda_files)) {
+  e <- new.env()
+  load(rda_files[[i]], envir = e)
+  stopifnot(exists("results", envir = e))
+  all_wqs2_qg[[i]] <- get("results", envir = e)
+}
 ```
 
 ## Flatten outputs to tables
@@ -84,6 +98,17 @@ for (batch_res in all_qgcomp) {
     if (is.null(iter_res)) next
     if (!is.null(iter_res$coef))    all_coef_qg[[length(all_coef_qg) + 1]] <- iter_res$coef
     if (!is.null(iter_res$weights)) all_weights_qg[[length(all_weights_qg) + 1]] <- iter_res$weights
+  }
+}
+
+all_coef_wqs2_qg <- list()
+all_weights_wqs2_qg <- list()
+
+for (batch_res in all_wqs2_qg) {
+  for (iter_res in batch_res) {
+    if (is.null(iter_res)) next
+    if (!is.null(iter_res$coef))    all_coef_wqs2_qg[[length(all_coef_wqs2_qg) + 1]] <- iter_res$coef
+    if (!is.null(iter_res$weights)) all_weights_wqs2_qg[[length(all_weights_wqs2_qg) + 1]] <- iter_res$weights
   }
 }
   
@@ -114,9 +139,12 @@ bkmr_delta <- bkmr_df %>%
   ) %>%
   select(batch, scenario, n, p, rho_X, sigma, seed, method, term, estimate, lb, ub)
 
-coef_df <- bind_rows(all_coef) %>%
-  filter(!(method %in% c("qgcomp.noboot", "qgcomp.boot"))) %>%
-  bind_rows(all_coef_qg) %>% 
+qg_df <- bind_rows(all_coef_qg)
+wqs2_qg_df <- bind_rows(all_coef_wqs2_qg)
+coef_df <- bind_rows(all_coef)%>%
+  filter(!(method %in% c("WQS2: pos", "WQS2: neg", "qgcomp.noboot", "qgcomp.boot"))) %>%
+  bind_rows(wqs2_qg_df) %>% 
+  # bind_rows(wqs2_qg_df) %>% 
   bind_rows(bkmr_delta) %>%
   distinct() %>%
   mutate(method = case_when(str_detect(method, "BKMR") ~ "BKMR",
@@ -125,6 +153,7 @@ coef_df <- bind_rows(all_coef) %>%
                              str_detect(method, "qgcomp.boot") ~ "qgcomp nonlinear",
                              str_detect(method, "WQS2: pos") ~ "2iWQS:pos",
                              str_detect(method, "WQS2: neg") ~ "2iWQS:neg",
+                             str_detect(method, "2iWQS") ~ "2iWQS",
                              .default = "WQS"),
          method = factor(method, levels = c("BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS", "2iWQS:pos", "2iWQS:neg")),
          scenario = factor(scenario, levels = c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive")))
@@ -193,23 +222,30 @@ wqs_delta <- coef_df %>%
 # --- WQS2 (two indices): continuous contrast corresponds to +1 quartile-category shift for both indices
 # so the joint contrast is beta_pos + beta_neg
 wqs2_delta <- coef_df %>%
-  filter(method %in% c("2iWQS:pos", "2iWQS:neg")) %>%
-  filter(!term %in% c("(Intercept)", "Intercept")) %>%
-  mutate(component = ifelse(grepl("pos", method), "pos", "neg")) %>%
-  select(batch, scenario, n, p, rho_X, sigma, seed,
-         component, estimate, lb, ub) %>%
-  tidyr::pivot_wider(
-    names_from = component,
-    values_from = c(estimate, lb, ub),
-    values_fn = dplyr::first
-  ) %>%
-  mutate(
-    method = "2iWQS",
-    estimate = estimate_pos + estimate_neg,
-    lb = lb_pos + lb_neg,
-    ub = ub_pos + ub_neg
-  ) %>%
-  select(batch, scenario, n, p, rho_X, sigma, seed, method, estimate, lb, ub)
+  filter(method == "2iWQS") %>%
+  # keep the mixture term only (usually "wqs")
+  arrange(batch, seed) %>%
+  select(batch, scenario, n, p, rho_X, sigma, seed, method, term, estimate, lb, ub) %>%
+  select(-term)
+
+# wqs2_delta <- coef_df %>%
+#   filter(method %in% c("2iWQS:pos", "2iWQS:neg")) %>%
+#   filter(!term %in% c("(Intercept)", "Intercept")) %>%
+#   mutate(component = ifelse(grepl("pos", method), "pos", "neg")) %>%
+#   select(batch, scenario, n, p, rho_X, sigma, seed,
+#          component, estimate, lb, ub) %>%
+#   tidyr::pivot_wider(
+#     names_from = component,
+#     values_from = c(estimate, lb, ub),
+#     values_fn = dplyr::first
+#   ) %>%
+#   mutate(
+#     method = "2iWQS",
+#     estimate = estimate_pos + estimate_neg,
+#     lb = lb_pos + lb_neg,
+#     ub = ub_pos + ub_neg
+#   ) %>%
+#   select(batch, scenario, n, p, rho_X, sigma, seed, method, estimate, lb, ub)
 
 # --- qgcomp.noboot (degree=1): psi1 corresponds to a 1-category quartile increase -> matches median->75th
 qgcomp_delta <- coef_df %>%
@@ -223,15 +259,10 @@ qgcomp_delta <- coef_df %>%
 # --- qgcomp.boot nonlinear (degree=2): contrast for 1-step increase is psi1 + psi2
 # (Intercept), psi1, psi2 exist in your updated model
 qgcomp_nonlinear_delta <- coef_df %>%
-  filter(method == "qgcomp nonlinear") %>%
+  filter(method == "qgcomp nonlinear" & term == "delta") %>%
+  arrange(batch, seed) %>%
   select(batch, scenario, n, p, rho_X, sigma, seed, method, term, estimate, lb, ub) %>%
-  tidyr::pivot_wider(names_from = term, values_from = c(estimate, lb, ub)) %>%
-  mutate(
-    estimate = estimate_psi1 + estimate_psi2,
-    lb = lb_psi1 + lb_psi2,
-    ub = ub_psi1 + ub_psi2
-  ) %>%
-  select(batch, scenario, n, p, rho_X, sigma, seed, method, estimate, lb, ub)
+  select(-term)
 
 # --- BWS: theta1 is slope per 1-unit increase in weighted index sum(w_j X_j).
 # Under continuous contrast where all X_j shift by step_cont and sum(w)=1:
@@ -442,7 +473,7 @@ ggplot(power_plot_df, aes(x = sigma, y = power, color = method, group = method))
 
 ```{r}
 perf_tbl <- delta_df %>%
-  filter(sigma == 1) %>%
+  filter(sigma == 2) %>%
   group_by(scenario, method, rho_X) %>%
   summarise(
     bias = round(mean(bias, na.rm = TRUE),3),
@@ -451,22 +482,23 @@ perf_tbl <- delta_df %>%
     .groups = "drop"
   )
 
-perf_tbl
+collapse_rho <- function(x) {
+  paste(sprintf("%.3f", x), collapse = " / ")
+}
 
-plot_coverage <- perf_tbl %>%
-  filter(sigma == 1) %>%
-  ggplot(aes(factor(method), coverage, fill = method)) + 
-  geom_bar(stat = "identity", position = position_dodge()) +
-  scale_fill_manual(values = my_colors) +
-  # geom_hline(yintercept = 0.95, color = "red", lty = "dashed")+
-  facet_grid(rho_X~scenario, labeller = labeller(rho_X = label_both, scenario = label_value), scales = "free") +
-  labs(x = "", y = "Mean 95% CI Coverage", fill = "Method") +
-  theme(
-    axis.title.x=element_blank(),
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
+table2 <- perf_tbl %>%
+  mutate(
+    rho_X = factor(rho_X, levels = c(0, 0.4, 0.7))
+  ) %>%
+  arrange(scenario, method, rho_X) %>%
+  group_by(scenario, method) %>%
+  summarise(
+    `Bias (ρ = 0 / 0.4 / 0.7)`     = collapse_rho(bias),
+    `RMSE (ρ = 0 / 0.4 / 0.7)`     = collapse_rho(rmse),
+    `Coverage (ρ = 0 / 0.4 / 0.7)` = paste(sprintf("%.2f", coverage), collapse = " / "),
+    .groups = "drop"
   )
-plot_coverage
+table2[,3:5]
 ```
 
 ## Weight sensitivity/specificity
@@ -585,3 +617,12 @@ plot_sp <- sens_spec %>%
   )
 plot_sp
 ```
+```{r}
+df_aic <- coef_df %>%
+  filter(!is.na(AIC_qgcomp)) %>%
+  group_by(sigma, scenario, rho_X, seed) %>%
+  summarize(favor_nonlinear = AIC_qgcomp[1] > AIC_qgcomp_ext[1], .groups = "drop") %>%
+  group_by(sigma, scenario, rho_X) %>%
+  summarize(pct_favor_nonlinear = round(mean(favor_nonlinear), 4), .groups = "drop")
+```
+

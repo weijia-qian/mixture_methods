@@ -75,9 +75,9 @@ simulate_data <- function(
     I1 <- as.numeric(X[, 1] > q)
     I2 <- as.numeric(X[, 2] > q)
     
-    y <- 0.25 * I1 +
-      0.15 * I2 -
-      0.15 * I1 * I2 +
+    y <- 0.25 * X[, 1] * I1 +
+      0.15 * X[, 2] * I2 -
+      0.15 * X[, 1] * X[, 2] * I1 * I2 +
       rnorm(n, 0, sigma)
   }
   

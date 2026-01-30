@@ -53,7 +53,7 @@ signal_f <- function(X, scenario) {
   if (scenario == "interactive") {
     I1 <- as.numeric(X[, 1] >= q75)
     I2 <- as.numeric(X[, 2] >= q75)
-    return(0.25 * I1 + 0.15 * I2 - 0.15 * I1 * I2)
+    return(0.25 * X[, 1] * I1 + 0.15 * X[, 2] * I2 - 0.15 * X[, 1] * X[, 2]* I1 * I2)
   }
   stop("Unknown scenario: ", scenario)
 }

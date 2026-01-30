@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --array=1-9%9
-#SBATCH --job-name=inter_5
+#SBATCH --job-name=inter_4
 #SBATCH --partition=chang
-#SBATCH --output=inter_5.out
-#SBATCH --error=inter_5.err
+#SBATCH --output=inter_4.out
+#SBATCH --error=inter_4.err
 
 module purge
 module load R/4.4.0

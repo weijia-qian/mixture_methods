@@ -177,7 +177,7 @@ for (i in 1:nsim) {
   }
   
   ###################
-  BKMR
+  # BKMR
   fit.bkmr <- tryCatch(
     {
       kmbayes(
@@ -197,7 +197,7 @@ for (i in 1:nsim) {
   if (is.null(fit.bkmr)) next
 
   ####################
-  BWS
+  # BWS
   fit.bws <- tryCatch(
     {
       bws::bws(
@@ -231,7 +231,7 @@ for (i in 1:nsim) {
   ####################
   # coefficients
   df_coef <- dplyr::bind_rows(
-    # res.wqs[[1]],
+    res.wqs[[1]],
     res.wqs2[[1]],
     res.qg[[1]],
     if (!is.null(res.qgext)) res.qgext[[1]],

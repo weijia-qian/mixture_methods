@@ -59,18 +59,32 @@ for (i in seq_along(rda_files)) {
   all_qgcomp[[i]] <- get("results", envir = e)
 }
 
-folder_path <- here("results", "wqs2_qg")
+# folder_path <- here("results", "wqs2_qg")
+# 
+# rda_files <- list.files(folder_path, pattern = "\\.RDA$", full.names = TRUE)
+# length(rda_files)
+# 
+# # Robust loader: guarantees we extract object named `results`
+# all_wqs2_qg <- vector("list", length(rda_files))
+# for (i in seq_along(rda_files)) {
+#   e <- new.env()
+#   load(rda_files[[i]], envir = e)
+#   stopifnot(exists("results", envir = e))
+#   all_wqs2_qg[[i]] <- get("results", envir = e)
+# }
+
+folder_path <- here("results", "interactive")
 
 rda_files <- list.files(folder_path, pattern = "\\.RDA$", full.names = TRUE)
 length(rda_files)
 
 # Robust loader: guarantees we extract object named `results`
-all_wqs2_qg <- vector("list", length(rda_files))
+all_interactive <- vector("list", length(rda_files))
 for (i in seq_along(rda_files)) {
   e <- new.env()
   load(rda_files[[i]], envir = e)
   stopifnot(exists("results", envir = e))
-  all_wqs2_qg[[i]] <- get("results", envir = e)
+  all_interactive[[i]] <- get("results", envir = e)
 }
 ```
 
@@ -101,20 +115,35 @@ for (batch_res in all_qgcomp) {
   }
 }
 
-all_coef_wqs2_qg <- list()
-all_weights_wqs2_qg <- list()
+# all_coef_wqs2_qg <- list()
+# all_weights_wqs2_qg <- list()
+# 
+# for (batch_res in all_wqs2_qg) {
+#   for (iter_res in batch_res) {
+#     if (is.null(iter_res)) next
+#     if (!is.null(iter_res$coef))    all_coef_wqs2_qg[[length(all_coef_wqs2_qg) + 1]] <- iter_res$coef
+#     if (!is.null(iter_res$weights)) all_weights_wqs2_qg[[length(all_weights_wqs2_qg) + 1]] <- iter_res$weights
+#   }
+# }
 
-for (batch_res in all_wqs2_qg) {
+all_coef_int <- list()
+all_weights_int <- list()
+all_bkmr_int <- list()
+
+for (batch_res in all_interactive) {
   for (iter_res in batch_res) {
     if (is.null(iter_res)) next
-    if (!is.null(iter_res$coef))    all_coef_wqs2_qg[[length(all_coef_wqs2_qg) + 1]] <- iter_res$coef
-    if (!is.null(iter_res$weights)) all_weights_wqs2_qg[[length(all_weights_wqs2_qg) + 1]] <- iter_res$weights
+    if (!is.null(iter_res$coef))    all_coef_int[[length(all_coef_int) + 1]] <- iter_res$coef
+    if (!is.null(iter_res$weights)) all_weights_int[[length(all_weights_int) + 1]] <- iter_res$weights
+    if (!is.null(iter_res$bkmr))    all_bkmr_int[[length(all_bkmr_int) + 1]] <- iter_res$bkmr
   }
 }
   
 weights_df <- bind_rows(all_weights) %>%
   filter(!(method %in% c("qgcomp.noboot", "qgcomp.boot"))) %>%
   bind_rows(all_weights_qg) %>% 
+  filter(scenario != "interactive") %>%
+  bind_rows(all_weights_int) %>% 
   distinct() %>%
   mutate(method = case_when(str_detect(method, "BKMR") ~ "BKMR",
                              str_detect(method, "BWS") ~ "BWS",
@@ -126,7 +155,11 @@ weights_df <- bind_rows(all_weights) %>%
          method = factor(method, levels = c("BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS", "2iWQS:pos", "2iWQS:neg")),
          scenario = factor(scenario, levels = c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive")))
 
-bkmr_df <- bind_rows(all_bkmr) %>% distinct()
+bkmr_df <- bind_rows(all_bkmr) %>%
+  filter(scenario != "interactive") %>%
+  bind_rows(all_bkmr_int) %>% 
+  distinct()
+
 # --- BKMR: already returns Delta(q, 0.5) for q=0.75 (empirical quantiles) ---
 bkmr_delta <- bkmr_df %>%
   filter(abs(quantile - 0.75) < 1e-12) %>%
@@ -140,10 +173,14 @@ bkmr_delta <- bkmr_df %>%
   select(batch, scenario, n, p, rho_X, sigma, seed, method, term, estimate, lb, ub)
 
 qg_df <- bind_rows(all_coef_qg)
-wqs2_qg_df <- bind_rows(all_coef_wqs2_qg)
-coef_df <- bind_rows(all_coef)%>%
-  filter(!(method %in% c("WQS2: pos", "WQS2: neg", "qgcomp.noboot", "qgcomp.boot"))) %>%
-  bind_rows(wqs2_qg_df) %>% 
+# wqs2_qg_df <- bind_rows(all_coef_wqs2_qg)
+int_df <- bind_rows(all_coef_int)
+
+coef_df <- bind_rows(all_coef) %>%
+  filter(!(method %in% c("qgcomp.noboot", "qgcomp.boot"))) %>%
+  bind_rows(qg_df) %>% 
+  filter(scenario != "interactive") %>%
+  bind_rows(all_coef_int) %>% 
   # bind_rows(wqs2_qg_df) %>% 
   bind_rows(bkmr_delta) %>%
   distinct() %>%
@@ -158,6 +195,10 @@ coef_df <- bind_rows(all_coef)%>%
          method = factor(method, levels = c("BKMR", "BWS", "qgcomp", "qgcomp nonlinear", "WQS", "2iWQS", "2iWQS:pos", "2iWQS:neg")),
          scenario = factor(scenario, levels = c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive")))
 
+saveRDS(coef_df, here("results", "coef_df.rds"))
+saveRDS(weights_df, here("results", "weights_df.rds"))
+coef_df <- readRDS(here("results", "coef_df.rds"))
+weights_df <- readRDS(here("results", "weights_df.rds"))
 ```
 
 ## Define the true joint-effect contrast Δ(75,50)
@@ -186,7 +227,7 @@ true_joint_effect <- function(scenario, p = 5) {
     if (scenario == "interactive") {
       I1 <- as.numeric(X[1] >= q)
       I2 <- as.numeric(X[2] >= q)
-      return(0.25 * I1 + 0.15 * I2 - 0.15 * I1 * I2)
+      return(0.25 * X[1] * I1 + 0.15 * X[2] * I2 - 0.15 * X[1] * X[2] * I1 * I2)
     }
     stop("Unknown scenario")
   }
@@ -410,26 +451,32 @@ df_power_wide <- df_power_long %>%
 arrange(scenario, p, rho_X, sigma, method) %>%
   pivot_wider(names_from = method, values_from = cell)
 
-df_power_wide <- df_power_wide %>%      
+df_power_wide %>%      
+  filter(scenario == "interactive") %>%
   select(BKMR, BWS, qgcomp, `qgcomp nonlinear: psi1`, `qgcomp nonlinear: psi2`, WQS, `2iWQS:pos`)
-df_power_wide
+
+
 df_power <- coef_df %>%
-  filter(scenario != "null" & !(method %in% c("2iWQS:neg", "qgcomp nonlinear")) & term != "(intercept)") %>%
+  filter(scenario != "null" & !(method %in% c("2iWQS","2iWQS:neg", "qgcomp nonlinear")) & term != "(intercept)") %>%
   mutate(reject0 = (lb > 0 | ub < 0)) %>%
   group_by(scenario, p, rho_X, sigma, method) %>%
   summarise(se = sd(reject0, na.rm = TRUE)/sqrt(500),
             tcrit  = qt(0.975, df = 500 - 1),   # 97.5% quantile of t_{n-1}
             mean = round(mean(reject0, na.rm = TRUE),2),
             lower  = round(mean - tcrit * se,2),                            # lower 95% CI
-            upper  = round(mean + tcrit * se,2))
+            upper  = round(mean + tcrit * se,2)) %>%
+  rename(rho = rho_X)
   # pivot_wider(names_from = method, values_from = mean)
 
-df_power_k5 <- df_power %>%
-  filter(sigma == 1)
+# df_power_k5 <- df_power %>%
+#   filter(sigma == 1)
+
+df_power_int <- df_power %>%
+  filter(scenario == "interactive")
 
 # Bar plot: power
 plot_power <- df_power %>%
-  filter(sigma == 1) %>%
+  filter(sigma == 2) %>%
   ggplot(aes(factor(method), mean, fill = method)) + 
   geom_bar(stat = "identity", position = position_dodge()) +
   scale_fill_manual(values = my_colors) +
@@ -473,7 +520,7 @@ ggplot(power_plot_df, aes(x = sigma, y = power, color = method, group = method))
 
 ```{r}
 perf_tbl <- delta_df %>%
-  filter(sigma == 2) %>%
+  filter(sigma == 1) %>%
   group_by(scenario, method, rho_X) %>%
   summarise(
     bias = round(mean(bias, na.rm = TRUE),3),
@@ -498,7 +545,9 @@ table2 <- perf_tbl %>%
     `Coverage (ρ = 0 / 0.4 / 0.7)` = paste(sprintf("%.2f", coverage), collapse = " / "),
     .groups = "drop"
   )
-table2[,3:5]
+table2 %>%
+  filter(scenario=="interactive") %>%
+  select(3:5)
 ```
 
 ## Weight sensitivity/specificity
@@ -588,7 +637,7 @@ sens_spec$method <- factor(sens_spec$method,
 sens_spec$rho <- sens_spec$rho_X
 
 plot_se <- sens_spec %>%
-  filter(scenario != "null" & sigma == 2) %>%
+  filter(scenario != "null" & sigma == 0.5) %>%
   ggplot(aes(factor(method), sensitivity, fill = method)) + 
   geom_bar(stat = "identity", position = position_dodge()) +
   scale_fill_manual(values = my_colors) +
@@ -603,7 +652,7 @@ plot_se <- sens_spec %>%
 plot_se
 
 plot_sp <- sens_spec %>%
-  filter(scenario != "null" & sigma == 2) %>%
+  filter(scenario != "null" & sigma == 0.5) %>%
   ggplot(aes(factor(method), specificity, fill = method)) + 
   geom_bar(stat = "identity", position = position_dodge()) +
   scale_fill_manual(values = my_colors) +

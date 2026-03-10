@@ -25,7 +25,7 @@ source(here("source", "extract_estimates.R"))
 ## set simulation design elements
 ###############################################################
 # scenarios <- c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive")
-scenarios <- c("interactive")
+scenarios <- c("nonlinear", "interactive")
 rho_levels <- c(0, 0.4, 0.7)
 sigma_levels <- c(0.5, 1.0, 2.0)
 
@@ -201,7 +201,7 @@ for (i in 1:nsim) {
   fit.bws <- tryCatch(
     {
       bws::bws(
-        iter = 8000,                 # use 2000 to keep runtime sane; change if you want
+        iter = 8000,                
         y = simdata$y,
         X = simdata[, -1],
         family = "gaussian",
@@ -303,9 +303,10 @@ for (i in 1:nsim) {
 
 ####################
 # save results
-# date <- gsub("-", "", Sys.Date())
-# dir.create(file.path(here("results"), date), showWarnings = FALSE, recursive = TRUE)
-dir.create(file.path(here("results"), "interactive"), showWarnings = FALSE, recursive = TRUE)
+Date = gsub("-", "", Sys.Date())
+# dir.create(file.path(here::here("outputs"), Date), showWarnings = FALSE)
+# filename = paste0(here::here("outputs", Date), "/", paste0(batch, "_batch1.RDA"))
 
-filename <- file.path(here("results", "interactive"), paste0(batch, "_batch1.RDA"))
+dir.create(file.path(here("results"), "interactive"), showWarnings = FALSE, recursive = TRUE)
+filename <- file.path(here("results", "interactive"), paste0(batch, "_batch0.RDA"))
 save(results, file = filename)

@@ -31,7 +31,7 @@ fig_dir <- "/Users/weijia/Research/Frailty/analysis/figures"
 ## Load simulation outputs
 
 ```{r}
-folder_path <- here("results", "k5")
+folder_path <- here("results", "n2000")
 
 rda_files <- list.files(folder_path, pattern = "\\.RDA$", full.names = TRUE)
 length(rda_files)
@@ -45,33 +45,6 @@ for (i in seq_along(rda_files)) {
   all_results[[i]] <- get("results", envir = e)
 }
 
-folder_path <- here("results", "qgcomp")
-
-rda_files <- list.files(folder_path, pattern = "\\.RDA$", full.names = TRUE)
-length(rda_files)
-
-# Robust loader: guarantees we extract object named `results`
-all_qgcomp <- vector("list", length(rda_files))
-for (i in seq_along(rda_files)) {
-  e <- new.env()
-  load(rda_files[[i]], envir = e)
-  stopifnot(exists("results", envir = e))
-  all_qgcomp[[i]] <- get("results", envir = e)
-}
-
-folder_path <- here("results", "wqs2_qg")
-
-rda_files <- list.files(folder_path, pattern = "\\.RDA$", full.names = TRUE)
-length(rda_files)
-
-# Robust loader: guarantees we extract object named `results`
-all_wqs2_qg <- vector("list", length(rda_files))
-for (i in seq_along(rda_files)) {
-  e <- new.env()
-  load(rda_files[[i]], envir = e)
-  stopifnot(exists("results", envir = e))
-  all_wqs2_qg[[i]] <- get("results", envir = e)
-}
 ```
 
 ## Flatten outputs to tables
@@ -90,31 +63,8 @@ for (batch_res in all_results) {
   }
 }
 
-all_coef_qg <- list()
-all_weights_qg <- list()
-
-for (batch_res in all_qgcomp) {
-  for (iter_res in batch_res) {
-    if (is.null(iter_res)) next
-    if (!is.null(iter_res$coef))    all_coef_qg[[length(all_coef_qg) + 1]] <- iter_res$coef
-    if (!is.null(iter_res$weights)) all_weights_qg[[length(all_weights_qg) + 1]] <- iter_res$weights
-  }
-}
-
-all_coef_wqs2_qg <- list()
-all_weights_wqs2_qg <- list()
-
-for (batch_res in all_wqs2_qg) {
-  for (iter_res in batch_res) {
-    if (is.null(iter_res)) next
-    if (!is.null(iter_res$coef))    all_coef_wqs2_qg[[length(all_coef_wqs2_qg) + 1]] <- iter_res$coef
-    if (!is.null(iter_res$weights)) all_weights_wqs2_qg[[length(all_weights_wqs2_qg) + 1]] <- iter_res$weights
-  }
-}
   
 weights_df <- bind_rows(all_weights) %>%
-  filter(!(method %in% c("qgcomp.noboot", "qgcomp.boot"))) %>%
-  bind_rows(all_weights_qg) %>% 
   distinct() %>%
   mutate(method = case_when(str_detect(method, "BKMR") ~ "BKMR",
                              str_detect(method, "BWS") ~ "BWS",
@@ -139,12 +89,7 @@ bkmr_delta <- bkmr_df %>%
   ) %>%
   select(batch, scenario, n, p, rho_X, sigma, seed, method, term, estimate, lb, ub)
 
-qg_df <- bind_rows(all_coef_qg)
-wqs2_qg_df <- bind_rows(all_coef_wqs2_qg)
 coef_df <- bind_rows(all_coef)%>%
-  filter(!(method %in% c("WQS2: pos", "WQS2: neg", "qgcomp.noboot", "qgcomp.boot"))) %>%
-  bind_rows(wqs2_qg_df) %>% 
-  # bind_rows(wqs2_qg_df) %>% 
   bind_rows(bkmr_delta) %>%
   distinct() %>%
   mutate(method = case_when(str_detect(method, "BKMR") ~ "BKMR",
@@ -186,7 +131,7 @@ true_joint_effect <- function(scenario, p = 5) {
     if (scenario == "interactive") {
       I1 <- as.numeric(X[1] >= q)
       I2 <- as.numeric(X[2] >= q)
-      return(0.25 * I1 + 0.15 * I2 - 0.15 * I1 * I2)
+      return(0.25 * X[1] * I1 + 0.15 * X[2] * I2 - 0.15 * X[1] * X[2] * I1 * I2)
     }
     stop("Unknown scenario")
   }
@@ -227,25 +172,6 @@ wqs2_delta <- coef_df %>%
   arrange(batch, seed) %>%
   select(batch, scenario, n, p, rho_X, sigma, seed, method, term, estimate, lb, ub) %>%
   select(-term)
-
-# wqs2_delta <- coef_df %>%
-#   filter(method %in% c("2iWQS:pos", "2iWQS:neg")) %>%
-#   filter(!term %in% c("(Intercept)", "Intercept")) %>%
-#   mutate(component = ifelse(grepl("pos", method), "pos", "neg")) %>%
-#   select(batch, scenario, n, p, rho_X, sigma, seed,
-#          component, estimate, lb, ub) %>%
-#   tidyr::pivot_wider(
-#     names_from = component,
-#     values_from = c(estimate, lb, ub),
-#     values_fn = dplyr::first
-#   ) %>%
-#   mutate(
-#     method = "2iWQS",
-#     estimate = estimate_pos + estimate_neg,
-#     lb = lb_pos + lb_neg,
-#     ub = ub_pos + ub_neg
-#   ) %>%
-#   select(batch, scenario, n, p, rho_X, sigma, seed, method, estimate, lb, ub)
 
 # --- qgcomp.noboot (degree=1): psi1 corresponds to a 1-category quartile increase -> matches median->75th
 qgcomp_delta <- coef_df %>%
@@ -308,10 +234,10 @@ We use CI inclusion logic:
 
 ```{r}
 df_type1 <- coef_df %>%
-  filter(scenario == "null" & method != "qgcomp nonlinear") %>%
+  filter(scenario == "null" & !method %in% c("qgcomp nonlinear", "2iWQS:neg", "2iWQS")) %>%
   mutate(reject0 = (lb > 0 | ub < 0)) %>%
   group_by(method, scenario, rho_X, sigma) %>%
-  summarise(type1 = round(mean(reject0, na.rm = TRUE),2))
+  summarise(type1 = mean(reject0, na.rm = TRUE))
 df_type1
 
 # --- Wilson CI helper (no extra packages needed) ---
@@ -327,7 +253,7 @@ wilson_ci <- function(x, n, conf = 0.95) {
 
 # --- Build Type I error table with Wilson CI ---
 df_type1_wide <- coef_df %>%
-  filter(scenario == "null", method != "qgcomp nonlinear") %>%
+  filter(scenario == "null"& !method %in% c("qgcomp nonlinear", "2iWQS:neg", "2iWQS")) %>%
   mutate(
     reject0 = (lb > 0 | ub < 0)  # reject H0: effect=0 if CI excludes 0
   ) %>%
@@ -355,7 +281,7 @@ df_type1_wide <- coef_df %>%
     values_from = cell
   )
 
-df_type1_wide[,3:8]
+df_type1_wide[,3:7]
 ```
 
 
@@ -401,7 +327,6 @@ df_power_long <- coef_df %>%
 
 method_order <- c(
   "BKMR", "BWS", "qgcomp", "qgcomp nonlinear: psi1", "qgcomp nonlinear: psi2", "WQS", "2iWQS:pos"
-  
 )
 
 df_power_wide <- df_power_long %>%
@@ -411,37 +336,9 @@ arrange(scenario, p, rho_X, sigma, method) %>%
   pivot_wider(names_from = method, values_from = cell)
 
 df_power_wide <- df_power_wide %>%      
-  select(BKMR, BWS, qgcomp, `qgcomp nonlinear: psi1`, `qgcomp nonlinear: psi2`, WQS, `2iWQS:pos`)
+  select(BKMR, BWS, qgcomp, `qgcomp nonlinear: psi1`, `NA`, WQS, `2iWQS:pos`)
 df_power_wide
-df_power <- coef_df %>%
-  filter(scenario != "null" & !(method %in% c("2iWQS:neg", "qgcomp nonlinear")) & term != "(intercept)") %>%
-  mutate(reject0 = (lb > 0 | ub < 0)) %>%
-  group_by(scenario, p, rho_X, sigma, method) %>%
-  summarise(se = sd(reject0, na.rm = TRUE)/sqrt(500),
-            tcrit  = qt(0.975, df = 500 - 1),   # 97.5% quantile of t_{n-1}
-            mean = round(mean(reject0, na.rm = TRUE),2),
-            lower  = round(mean - tcrit * se,2),                            # lower 95% CI
-            upper  = round(mean + tcrit * se,2))
-  # pivot_wider(names_from = method, values_from = mean)
 
-df_power_k5 <- df_power %>%
-  filter(sigma == 1)
-
-# Bar plot: power
-plot_power <- df_power %>%
-  filter(sigma == 1) %>%
-  ggplot(aes(factor(method), mean, fill = method)) + 
-  geom_bar(stat = "identity", position = position_dodge()) +
-  scale_fill_manual(values = my_colors) +
-  # geom_hline(yintercept = 0.95, color = "red", lty = "dashed")+
-  facet_grid(rho~scenario, labeller = labeller(rho = label_both, scenario = label_value), scales = "free") +
-  labs(x = "", y = "Power", fill = "Method") +
-  theme(
-    axis.title.x=element_blank(),
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-  )
-plot_power
 ```
 
 ```{r}
@@ -473,7 +370,7 @@ ggplot(power_plot_df, aes(x = sigma, y = power, color = method, group = method))
 
 ```{r}
 perf_tbl <- delta_df %>%
-  filter(sigma == 2) %>%
+  filter(sigma == 1) %>%
   group_by(scenario, method, rho_X) %>%
   summarise(
     bias = round(mean(bias, na.rm = TRUE),3),
@@ -588,7 +485,7 @@ sens_spec$method <- factor(sens_spec$method,
 sens_spec$rho <- sens_spec$rho_X
 
 plot_se <- sens_spec %>%
-  filter(scenario != "null" & sigma == 2) %>%
+  filter(scenario != "null" & sigma == 1) %>%
   ggplot(aes(factor(method), sensitivity, fill = method)) + 
   geom_bar(stat = "identity", position = position_dodge()) +
   scale_fill_manual(values = my_colors) +
@@ -603,7 +500,7 @@ plot_se <- sens_spec %>%
 plot_se
 
 plot_sp <- sens_spec %>%
-  filter(scenario != "null" & sigma == 2) %>%
+  filter(scenario != "null" & sigma == 1) %>%
   ggplot(aes(factor(method), specificity, fill = method)) + 
   geom_bar(stat = "identity", position = position_dodge()) +
   scale_fill_manual(values = my_colors) +
@@ -617,6 +514,7 @@ plot_sp <- sens_spec %>%
   )
 plot_sp
 ```
+
 ```{r}
 df_aic <- coef_df %>%
   filter(!is.na(AIC_qgcomp)) %>%

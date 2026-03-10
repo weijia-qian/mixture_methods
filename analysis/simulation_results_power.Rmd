@@ -147,7 +147,11 @@ df_power <- coef_df %>%
 #   arrange(scenario, rho, p)
 # saveRDS(all_power_2, here("results", "all_power_2.rds"))
 
-all_power_2 <- readRDS(here("results", "all_power_2.rds"))
+# all_power_2 <- readRDS(here("results", "all_power_2.rds"))
+# all_power_2 <- all_power_2 %>%
+#   filter(scenario != "interactive") %>%
+#   bind_rows(df_power_int) %>%
+#   arrange(scenario, rho, p)
 
 ggplot(all_power_2, aes(x = factor(p), y = mean, color = method, group = method)) +
   geom_line(linewidth = 1, alpha = 0.75) +

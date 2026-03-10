@@ -63,9 +63,9 @@ simulate_data <- function(
   if (scenario == "nonlinear") {
     
     # Smooth additive nonlinearity (not tailored to any method)
-    y <- 0.35 * X[, 1] -
-      0.15 * X[, 1]^2 +
-      0.20 * sin(pi * X[, 2]) +
+    y <- 0.20 * X[, 1] -
+      0.09 * X[, 1]^2 +
+      0.12 * sin(pi * X[, 2]) +
       rnorm(n, 0, sigma)
   }
   
@@ -75,9 +75,9 @@ simulate_data <- function(
     I1 <- as.numeric(X[, 1] > q)
     I2 <- as.numeric(X[, 2] > q)
     
-    y <- 0.25 * X[, 1] * I1 +
-      0.15 * X[, 2] * I2 -
-      0.15 * X[, 1] * X[, 2] * I1 * I2 +
+    y <- 0.47 * X[, 1] * I1 +
+      0.28 * X[, 2] * I2 -
+      0.28 * X[, 1] * X[, 2] * I1 * I2 +
       rnorm(n, 0, sigma)
   }
   

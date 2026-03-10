@@ -48,12 +48,12 @@ signal_f <- function(X, scenario) {
     return(0.25 * X[, 1] - 0.15 * X[, 2])
   }
   if (scenario == "nonlinear") {
-    return(0.35 * X[, 1] - 0.15 * (X[, 1]^2) + 0.20 * sin(pi * X[, 2]))
+    return(0.20 * X[, 1] - 0.09 * (X[, 1]^2) + 0.12 * sin(pi * X[, 2]))
   }
   if (scenario == "interactive") {
     I1 <- as.numeric(X[, 1] >= q75)
     I2 <- as.numeric(X[, 2] >= q75)
-    return(0.25 * X[, 1] * I1 + 0.15 * X[, 2] * I2 - 0.15 * X[, 1] * X[, 2]* I1 * I2)
+    return(0.47 * X[, 1] * I1 + 0.28 * X[, 2] * I2 - 0.28 * X[, 1] * X[, 2]* I1 * I2)
   }
   stop("Unknown scenario: ", scenario)
 }

@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --array=1-18%18
 #SBATCH --job-name=inter_9
-#SBATCH --partition=chang
+#SBATCH --partition=wrobel
 #SBATCH --output=inter_9.out
 #SBATCH --error=inter_9.err
 

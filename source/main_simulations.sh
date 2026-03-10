@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --array=1-18%18
-#SBATCH --job-name=inter_4
+#SBATCH --job-name=inter_5
 #SBATCH --partition=wrobel
-#SBATCH --output=inter_4.out
-#SBATCH --error=inter_4.err
+#SBATCH --output=inter_5.out
+#SBATCH --error=inter_5.err
 
 module purge
 module load R/4.4.0

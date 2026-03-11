@@ -24,7 +24,7 @@ source(here("source", "extract_estimates.R"))
 ###############################################################
 ## set simulation design elements
 ###############################################################
-scenarios <- c("null", "single", "homogeneous", "heterogeneous", "nonlinear", "interactive")
+scenarios <- c("nonlinear", "interactive")
 rho_levels <- c(0, 0.4, 0.7)
 sigma_levels <- c(1.0)
 
@@ -301,7 +301,7 @@ for (i in 1:nsim) {
 ####################
 # save results
 # date <- gsub("-", "", Sys.Date())
-dir.create(file.path(here("results"), "n2000"), showWarnings = FALSE, recursive = TRUE)
+dir.create(file.path(here("results"), "interactive"), showWarnings = FALSE, recursive = TRUE)
 
-filename <- file.path(here("results", "n2000"), paste0(batch, "_n2000_batch1.RDA"))
+filename <- file.path(here("results", "interactive"), paste0(batch, "_n2000_batch0.RDA"))
 save(results, file = filename)

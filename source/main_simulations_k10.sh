@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --array=1-12%12
-#SBATCH --job-name=k10_20_4
+#SBATCH --job-name=k10_20_5
 #SBATCH --partition=week-long-cpu
-#SBATCH --output=k10_20_4.out
-#SBATCH --error=k10_20_4.err
+#SBATCH --output=k10_20_5.out
+#SBATCH --error=k10_20_5.err
 
 module purge
 module load R/4.4.0

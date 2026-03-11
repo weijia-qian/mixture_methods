@@ -62,7 +62,6 @@ if (doLocal) {
 param <- params[batch, ]
 
 # reproducible seeds per batch
-set.seed(10000 + batch)
 seed <- sample.int(1e8, nsim)
 
 results <- vector("list", length = nsim)
@@ -71,7 +70,9 @@ Xnms <- paste0("X", 1:param$p)
 
 for (i in 1:nsim) {
   cat("batch:", batch, ", i:", i, "\n")
+  set.seed(seed[i])
   tic()
+  
   ####################
   # simulate data
   simdata <- simulate_data(
@@ -325,5 +326,5 @@ for (i in 1:nsim) {
 # date <- gsub("-", "", Sys.Date())
 dir.create(file.path(here("results"), "interactive"), showWarnings = FALSE, recursive = TRUE)
 
-filename <- file.path(here("results", "interactive"), paste0(batch, "_k10_20_batch0.RDA"))
+filename <- file.path(here("results", "interactive"), paste0(batch, "_k10_20_batch1.RDA"))
 save(results, file = filename)
